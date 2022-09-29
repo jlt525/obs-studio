@@ -410,6 +410,7 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	HookWidget(ui->previewSpacingHelpers,CHECK_CHANGED,  GENERAL_CHANGED);
 	HookWidget(ui->doubleClickSwitch,    CHECK_CHANGED,  GENERAL_CHANGED);
 	HookWidget(ui->studioPortraitLayout, CHECK_CHANGED,  GENERAL_CHANGED);
+        HookWidget(ui->studioPreviewOrder, CHECK_CHANGED,  GENERAL_CHANGED);
 	HookWidget(ui->prevProgLabelToggle,  CHECK_CHANGED,  GENERAL_CHANGED);
 	HookWidget(ui->multiviewMouseSwitch, CHECK_CHANGED,  GENERAL_CHANGED);
 	HookWidget(ui->multiviewDrawNames,   CHECK_CHANGED,  GENERAL_CHANGED);
@@ -1352,6 +1353,10 @@ void OBSBasicSettings::LoadGeneralSettings()
 	bool studioPortraitLayout = config_get_bool(
 		GetGlobalConfig(), "BasicWindow", "StudioPortraitLayout");
 	ui->studioPortraitLayout->setChecked(studioPortraitLayout);
+
+	bool studioPreviewOrder = config_get_bool(
+		GetGlobalConfig(), "BasicWindow", "StudioPreviewOrder");
+	ui->studioPreviewOrder->setChecked(studioPreviewOrder);
 
 	bool prevProgLabels = config_get_bool(GetGlobalConfig(), "BasicWindow",
 					      "StudioModeLabels");
@@ -3216,6 +3221,14 @@ void OBSBasicSettings::SaveGeneralSettings()
 		config_set_bool(GetGlobalConfig(), "BasicWindow",
 				"StudioPortraitLayout",
 				ui->studioPortraitLayout->isChecked());
+
+		main->ResetUI();
+	}
+
+	if (WidgetChanged(ui->studioPreviewOrder)) {
+		config_set_bool(GetGlobalConfig(), "BasicWindow",
+				"StudioPreviewOrder",
+				ui->studioPreviewOrder->isChecked());
 
 		main->ResetUI();
 	}
