@@ -1113,16 +1113,20 @@ OBSThemeMeta *OBSApp::ParseThemeMeta(const char *path)
 
 	if (cf_token_is(cfp, "OBSThemeMeta") ||
 	    cf_go_to_token(cfp, "OBSThemeMeta", nullptr)) {
-		OBSThemeMeta *meta = new OBSThemeMeta();
+
 		if (!cf_next_token(cfp))
 			return nullptr;
 
 		if (!cf_token_is(cfp, "{"))
 			return nullptr;
 
+		OBSThemeMeta *meta = new OBSThemeMeta();
+
 		for (;;) {
-			if (!cf_next_token(cfp))
+			if (!cf_next_token(cfp)) {
+				delete meta;
 				return nullptr;
+			}
 
 			ret = cf_token_is_type(cfp, CFTOKEN_NAME, "name",
 					       nullptr);
@@ -1136,8 +1140,10 @@ OBSThemeMeta *OBSApp::ParseThemeMeta(const char *path)
 			if (ret != PARSE_SUCCESS)
 				continue;
 
-			if (!cf_next_token(cfp))
+			if (!cf_next_token(cfp)) {
+				delete meta;
 				return nullptr;
+			}
 
 			ret = cf_token_is_type(cfp, CFTOKEN_STRING, "value",
 					       ";");
@@ -1158,8 +1164,10 @@ OBSThemeMeta *OBSApp::ParseThemeMeta(const char *path)
 			}
 			bfree(str);
 
-			if (!cf_go_to_token(cfp, ";", nullptr))
+			if (!cf_go_to_token(cfp, ";", nullptr)) {
+				delete meta;
 				return nullptr;
+			}
 		}
 		return meta;
 	}
@@ -2284,10 +2292,8 @@ static int run_program(fstream &logFile, int argc, char *argv[])
 		}
 #endif
 
-		if (!created_log) {
+		if (!created_log)
 			create_log_file(logFile);
-			created_log = true;
-		}
 
 #ifdef __APPLE__
 		MacPermissionStatus audio_permission =
@@ -2821,13 +2827,13 @@ static void convert_28_1_encoder_setting(const char *encoder, const char *file)
 			const char *preset =
 				obs_data_get_string(data, "preset");
 
-			if (astrcmpi(preset, "hq") == 0) {
+			if (astrcmpi(preset, "mq") == 0) {
 				obs_data_set_string(data, "preset2", "p6");
 				obs_data_set_string(data, "tune", "hq");
 				obs_data_set_string(data, "multipass", "qres");
 
-			} else if (astrcmpi(preset, "mq") == 0) {
-				obs_data_set_string(data, "preset2", "p4");
+			} else if (astrcmpi(preset, "hq") == 0) {
+				obs_data_set_string(data, "preset2", "p5");
 				obs_data_set_string(data, "tune", "hq");
 				obs_data_set_string(data, "multipass", "qres");
 
