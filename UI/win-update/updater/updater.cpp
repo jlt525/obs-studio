@@ -48,6 +48,7 @@ int completedFileSize = 0;
 static int completedUpdates = 0;
 
 static wchar_t tempPath[MAX_PATH];
+static wchar_t obs_base_directory[MAX_PATH];
 
 struct LastError {
 	DWORD code;
@@ -261,6 +262,7 @@ struct update_t {
 	state_t state = STATE_INVALID;
 	bool has_hash = false;
 	bool patchable = false;
+	bool compressed = false;
 
 	inline update_t() {}
 	inline update_t(const update_t &from)
@@ -273,7 +275,8 @@ struct update_t {
 		  fileSize(from.fileSize),
 		  state(from.state),
 		  has_hash(from.has_hash),
-		  patchable(from.patchable)
+		  patchable(from.patchable),
+		  compressed(from.compressed)
 	{
 		memcpy(hash, from.hash, sizeof(hash));
 		memcpy(downloadhash, from.downloadhash, sizeof(downloadhash));
@@ -290,7 +293,8 @@ struct update_t {
 		  fileSize(from.fileSize),
 		  state(from.state),
 		  has_hash(from.has_hash),
-		  patchable(from.patchable)
+		  patchable(from.patchable),
+		  compressed(from.compressed)
 	{
 		from.state = STATE_INVALID;
 
@@ -329,6 +333,7 @@ struct update_t {
 		state = from.state;
 		has_hash = from.has_hash;
 		patchable = from.patchable;
+		compressed = from.compressed;
 
 		memcpy(hash, from.hash, sizeof(hash));
 		memcpy(downloadhash, from.downloadhash, sizeof(downloadhash));
@@ -373,7 +378,9 @@ bool DownloadWorkerThread()
 
 	const DWORD enableHTTP2Flag = WINHTTP_PROTOCOL_FLAG_HTTP2;
 
-	HttpHandle hSession = WinHttpOpen(L"OBS Studio Updater/2.2",
+	const DWORD compressionFlags = WINHTTP_DECOMPRESSION_FLAG_ALL;
+
+	HttpHandle hSession = WinHttpOpen(L"OBS Studio Updater/3.0",
 					  WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
 					  WINHTTP_NO_PROXY_NAME,
 					  WINHTTP_NO_PROXY_BYPASS, 0);
@@ -389,6 +396,9 @@ bool DownloadWorkerThread()
 	WinHttpSetOption(hSession, WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL,
 			 (LPVOID)&enableHTTP2Flag, sizeof(enableHTTP2Flag));
 
+	WinHttpSetOption(hSession, WINHTTP_OPTION_DECOMPRESSION,
+			 (LPVOID)&compressionFlags, sizeof(compressionFlags));
+
 	HttpHandle hConnect = WinHttpConnect(hSession,
 					     L"cdn-fastly.obsproject.com",
 					     INTERNET_DEFAULT_HTTPS_PORT, 0);
@@ -397,6 +407,8 @@ bool DownloadWorkerThread()
 		Status(L"Update failed: Couldn't connect to cdn-fastly.obsproject.com");
 		return false;
 	}
+
+	ZSTDDCtx zCtx;
 
 	for (;;) {
 		bool foundWork = false;
@@ -469,6 +481,20 @@ bool DownloadWorkerThread()
 				return 1;
 			}
 
+			if (update.compressed && !update.patchable) {
+				int res = DecompressFile(
+					zCtx, update.tempPath.c_str(),
+					update.fileSize);
+				if (res) {
+					downloadThreadFailure = true;
+					DeleteFile(update.tempPath.c_str());
+					Status(L"Update failed: Decompression "
+					       L"failed on %s (error code %d)",
+					       update.outputPath.c_str(), res);
+					return 1;
+				}
+			}
+
 			ulock.lock();
 
 			update.state = STATE_DOWNLOADED;
@@ -516,6 +542,8 @@ static inline DWORD WaitIfOBS(DWORD id, const wchar_t *expected)
 {
 	wchar_t path[MAX_PATH];
 	wchar_t *name;
+	DWORD path_len = _countof(path);
+
 	*path = 0;
 
 	WinHandle proc = OpenProcess(PROCESS_QUERY_INFORMATION |
@@ -524,7 +552,12 @@ static inline DWORD WaitIfOBS(DWORD id, const wchar_t *expected)
 	if (!proc.Valid())
 		return WAITIFOBS_WRONG_PROCESS;
 
-	if (!GetProcessImageFileName(proc, path, _countof(path)))
+	if (!QueryFullProcessImageNameW(proc, 0, path, &path_len))
+		return WAITIFOBS_WRONG_PROCESS;
+
+	// check it's actually our exe that's running
+	size_t len = wcslen(obs_base_directory);
+	if (wcsncmp(path, obs_base_directory, len))
 		return WAITIFOBS_WRONG_PROCESS;
 
 	name = wcsrchr(path, L'\\');
@@ -704,6 +737,7 @@ static bool AddPackageUpdateFiles(const Json &root, size_t idx,
 		const Json &file = files[j];
 		const Json &fileName = file["name"];
 		const Json &hash = file["hash"];
+		const Json &dlHash = file["compressed_hash"];
 		const Json &size = file["size"];
 
 		if (!fileName.is_string())
@@ -715,21 +749,32 @@ static bool AddPackageUpdateFiles(const Json &root, size_t idx,
 
 		const string &fileUTF8 = fileName.string_value();
 		const string &hashUTF8 = hash.string_value();
+		const string &dlHashUTF8 = dlHash.string_value();
 		int fileSize = size.int_value();
 
 		if (hashUTF8.size() != BLAKE2_HASH_LENGTH * 2)
 			continue;
+
+		/* The download hash may not exist if a file is uncompressed */
+
+		bool compressed = false;
+		if (dlHashUTF8.size() == BLAKE2_HASH_LENGTH * 2)
+			compressed = true;
 
 		/* convert strings to wide */
 
 		wchar_t sourceURL[1024];
 		wchar_t updateFileName[MAX_PATH];
 		wchar_t updateHashStr[BLAKE2_HASH_STR_LENGTH];
+		wchar_t downloadHashStr[BLAKE2_HASH_STR_LENGTH];
 		wchar_t tempFilePath[MAX_PATH];
 
 		if (!UTF8ToWideBuf(updateFileName, fileUTF8.c_str()))
 			continue;
 		if (!UTF8ToWideBuf(updateHashStr, hashUTF8.c_str()))
+			continue;
+		if (compressed &&
+		    !UTF8ToWideBuf(downloadHashStr, dlHashUTF8.c_str()))
 			continue;
 
 		/* make sure paths are safe */
@@ -775,9 +820,17 @@ static bool AddPackageUpdateFiles(const Json &root, size_t idx,
 		update.packageName = packageName;
 		update.state = STATE_PENDING_DOWNLOAD;
 		update.patchable = false;
+		update.compressed = compressed;
 
-		StringToHash(updateHashStr, update.downloadhash);
-		memcpy(update.hash, update.downloadhash, sizeof(update.hash));
+		StringToHash(updateHashStr, update.hash);
+
+		if (compressed) {
+			update.sourceURL += L".zst";
+			StringToHash(downloadHashStr, update.downloadhash);
+		} else {
+			memcpy(update.downloadhash, update.hash,
+			       sizeof(update.downloadhash));
+		}
 
 		update.has_hash = has_hash;
 		if (has_hash)
@@ -944,7 +997,7 @@ static bool MoveInUseFileAway(update_t &file)
 	return false;
 }
 
-static bool UpdateFile(update_t &file)
+static bool UpdateFile(ZSTD_DCtx *ctx, update_t &file)
 {
 	wchar_t oldFileRenamedPath[MAX_PATH];
 
@@ -1001,7 +1054,7 @@ static bool UpdateFile(update_t &file)
 	retryAfterMovingFile:
 
 		if (file.patchable) {
-			error_code = ApplyPatch(file.tempPath.c_str(),
+			error_code = ApplyPatch(ctx, file.tempPath.c_str(),
 						file.outputPath.c_str());
 			installed_ok = (error_code == 0);
 
@@ -1051,9 +1104,10 @@ static bool UpdateFile(update_t &file)
 				       L"programs and try again.",
 				       curFileName);
 			} else {
+				DWORD err = GetLastError();
 				Status(L"Update failed: Couldn't update %s "
 				       L"(error %d)",
-				       curFileName, GetLastError());
+				       curFileName, err ? err : error_code);
 			}
 
 			file.state = STATE_INSTALL_FAILED;
@@ -1099,6 +1153,7 @@ static bool updateThreadFailed = false;
 static bool UpdateWorker()
 {
 	unique_lock<mutex> ulock(updateMutex, defer_lock);
+	ZSTDDCtx zCtx;
 
 	while (true) {
 		ulock.lock();
@@ -1112,7 +1167,7 @@ static bool UpdateWorker()
 		updateQueue.pop();
 		ulock.unlock();
 
-		if (!UpdateFile(update)) {
+		if (!UpdateFile(zCtx, update)) {
 			updateThreadFailed = true;
 			return false;
 		} else {
@@ -1165,7 +1220,9 @@ static bool UpdateVS2019Redists(const Json &root)
 
 	const DWORD tlsProtocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
 
-	HttpHandle hSession = WinHttpOpen(L"OBS Studio Updater/2.2",
+	const DWORD compressionFlags = WINHTTP_DECOMPRESSION_FLAG_ALL;
+
+	HttpHandle hSession = WinHttpOpen(L"OBS Studio Updater/3.0",
 					  WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
 					  WINHTTP_NO_PROXY_NAME,
 					  WINHTTP_NO_PROXY_BYPASS, 0);
@@ -1176,6 +1233,9 @@ static bool UpdateVS2019Redists(const Json &root)
 
 	WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS,
 			 (LPVOID)&tlsProtocols, sizeof(tlsProtocols));
+
+	WinHttpSetOption(hSession, WINHTTP_OPTION_DECOMPRESSION,
+			 (LPVOID)&compressionFlags, sizeof(compressionFlags));
 
 	HttpHandle hConnect = WinHttpConnect(hSession,
 					     L"cdn-fastly.obsproject.com",
@@ -1386,7 +1446,8 @@ static bool Update(wchar_t *cmdLine)
 	lpAppDataPath[0] = 0;
 
 	if (bIsPortable) {
-		GetCurrentDirectory(_countof(lpAppDataPath), lpAppDataPath);
+		StringCbCopy(lpAppDataPath, sizeof(lpAppDataPath),
+			     obs_base_directory);
 		StringCbCat(lpAppDataPath, sizeof(lpAppDataPath), L"\\config");
 	} else {
 		if (!appdata.empty()) {
@@ -1555,14 +1616,20 @@ static bool Update(wchar_t *cmdLine)
 		int responseCode;
 
 		int len = (int)post_body.size();
-		uLong compressSize = compressBound(len);
+		size_t compressSize = ZSTD_compressBound(len);
 		string compressedJson;
 
 		compressedJson.resize(compressSize);
-		compress2((Bytef *)&compressedJson[0], &compressSize,
-			  (const Bytef *)post_body.c_str(), len,
-			  Z_BEST_COMPRESSION);
-		compressedJson.resize(compressSize);
+
+		size_t result =
+			ZSTD_compress(&compressedJson[0], compressedJson.size(),
+				      post_body.data(), post_body.size(),
+				      ZSTD_CLEVEL_DEFAULT);
+
+		if (ZSTD_isError(result))
+			return false;
+
+		compressedJson.resize(result);
 
 		wstring manifestUrl(PATCH_MANIFEST_URL);
 		if (branch != L"stable")
@@ -1712,7 +1779,7 @@ static bool Update(wchar_t *cmdLine)
 				 SHGFP_TYPE_CURRENT, regsvr);
 		StringCbCat(regsvr, sizeof(regsvr), L"\\regsvr32.exe");
 
-		GetCurrentDirectoryW(_countof(src), src);
+		StringCbCopy(src, sizeof(src), obs_base_directory);
 		StringCbCat(src, sizeof(src),
 			    L"\\data\\obs-plugins\\win-dshow\\");
 
@@ -1811,13 +1878,10 @@ static void CancelUpdate(bool quit)
 
 static void LaunchOBS(bool portable)
 {
-	wchar_t cwd[MAX_PATH];
 	wchar_t newCwd[MAX_PATH];
 	wchar_t obsPath[MAX_PATH];
 
-	GetCurrentDirectory(_countof(cwd) - 1, cwd);
-
-	StringCbCopy(obsPath, sizeof(obsPath), cwd);
+	StringCbCopy(obsPath, sizeof(obsPath), obs_base_directory);
 	StringCbCat(obsPath, sizeof(obsPath), L"\\bin\\64bit");
 	SetCurrentDirectory(obsPath);
 	StringCbCopy(newCwd, sizeof(newCwd), obsPath);
@@ -1955,7 +2019,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int)
 	INITCOMMONCONTROLSEX icce;
 
 	wchar_t cwd[MAX_PATH];
-	wchar_t newPath[MAX_PATH];
 	GetCurrentDirectoryW(_countof(cwd) - 1, cwd);
 
 	bool isPortable = wcsstr(lpCmdLine, L"Portable") != nullptr ||
@@ -1991,9 +2054,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int)
 		/* return code 1 =  user wanted to launch OBS */
 		if (RestartAsAdmin(lpCmdLine, cwd) == 1) {
 			StringCbCat(cwd, sizeof(cwd), L"\\..\\..");
-			GetFullPathName(cwd, _countof(newPath), newPath,
-					nullptr);
-			SetCurrentDirectory(newPath);
+			GetFullPathName(cwd, _countof(obs_base_directory),
+					obs_base_directory, nullptr);
+			SetCurrentDirectory(obs_base_directory);
 
 			LaunchOBS(isPortable);
 		}
@@ -2006,8 +2069,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int)
 		return 0;
 	} else {
 		StringCbCat(cwd, sizeof(cwd), L"\\..\\..");
-		GetFullPathName(cwd, _countof(newPath), newPath, nullptr);
-		SetCurrentDirectory(newPath);
+		GetFullPathName(cwd, _countof(obs_base_directory),
+				obs_base_directory, nullptr);
+		SetCurrentDirectory(obs_base_directory);
 
 		hinstMain = hInstance;
 

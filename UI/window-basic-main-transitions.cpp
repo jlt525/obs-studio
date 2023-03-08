@@ -309,8 +309,6 @@ void OBSBasic::TransitionToScene(OBSSource source, bool force,
 	if (!scene)
 		return;
 
-	OBSWeakSource lastProgramScene;
-
 	if (usingPreviewProgram) {
 		if (!tBarActive)
 			lastProgramScene = programScene;
@@ -799,7 +797,7 @@ void OBSBasic::CreateProgramOptions()
 	mainButtonLayout->addWidget(transitionButton);
 	mainButtonLayout->addWidget(configTransitions);
 
-	tBar = new SliderIgnoreScroll(Qt::Horizontal);
+	tBar = new SliderIgnoreClick(Qt::Horizontal);
 	tBar->setMinimum(0);
 	tBar->setMaximum(T_BAR_PRECISION - 1);
 
@@ -906,6 +904,7 @@ void OBSBasic::TBarReleased()
 		tBar->blockSignals(false);
 		tBarActive = false;
 		EnableTransitionWidgets(true);
+		programScene = lastProgramScene;
 	}
 
 	tBar->clearFocus();
