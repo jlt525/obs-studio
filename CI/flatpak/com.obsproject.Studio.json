@@ -96,7 +96,7 @@
       "sources": [
         {
           "type": "git",
-          "url": "https://git.videolan.org/git/ffmpeg/nv-codec-headers.git",
+          "url": "https://github.com/FFmpeg/nv-codec-headers.git",
           "tag": "n11.1.5.1",
           "commit": "84483da70d903239d4536763fde8c7e6c4e80784"
         }
@@ -106,6 +106,7 @@
       "name": "srt",
       "buildsystem": "cmake-ninja",
       "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
         "-DENABLE_STATIC=OFF",
         "-DENABLE_APPS=OFF",
         "-DENABLE_LOGGING=OFF"
@@ -389,6 +390,7 @@
       "buildsystem": "cmake-ninja",
       "builddir": true,
       "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
         "-DJANSSON_EXAMPLES=OFF",
         "-DJANSSON_BUILD_DOCS=OFF",
         "-DJANSSON_BUILD_SHARED_LIBS=ON",
@@ -410,6 +412,9 @@
     {
       "name": "cef",
       "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release"
+      ],
       "no-make-install": true,
       "make-args": [
         "libcef_dll_wrapper"

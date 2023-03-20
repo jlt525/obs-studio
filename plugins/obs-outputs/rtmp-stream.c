@@ -609,24 +609,6 @@ static void *send_thread(void *data)
 	os_set_thread_name("rtmp-stream: send_thread");
 
 #if defined(_WIN32)
-	// Despite MSDN claiming otherwise, send buffer auto tuning on
-	// Windows 7 doesn't seem to work very well.
-	if (get_win_ver_int() == 0x601) {
-		DWORD cur_sendbuf_size;
-		DWORD desired_sendbuf_size = 524288;
-		socklen_t int_size = sizeof(int);
-
-		if (!getsockopt(stream->rtmp.m_sb.sb_socket, SOL_SOCKET,
-				SO_SNDBUF, (char *)&cur_sendbuf_size,
-				&int_size) &&
-		    cur_sendbuf_size < desired_sendbuf_size) {
-
-			setsockopt(stream->rtmp.m_sb.sb_socket, SOL_SOCKET,
-				   SO_SNDBUF, (char *)&desired_sendbuf_size,
-				   sizeof(desired_sendbuf_size));
-		}
-	}
-
 	log_sndbuf_size(stream);
 #endif
 
@@ -1152,10 +1134,18 @@ static bool init_connect(struct rtmp_stream *stream)
 	stream->got_first_video = false;
 
 	settings = obs_output_get_settings(stream->output);
-	dstr_copy(&stream->path, obs_service_get_url(service));
-	dstr_copy(&stream->key, obs_service_get_key(service));
-	dstr_copy(&stream->username, obs_service_get_username(service));
-	dstr_copy(&stream->password, obs_service_get_password(service));
+	dstr_copy(&stream->path,
+		  obs_service_get_connect_info(
+			  service, OBS_SERVICE_CONNECT_INFO_SERVER_URL));
+	dstr_copy(&stream->key,
+		  obs_service_get_connect_info(
+			  service, OBS_SERVICE_CONNECT_INFO_STREAM_KEY));
+	dstr_copy(&stream->username,
+		  obs_service_get_connect_info(
+			  service, OBS_SERVICE_CONNECT_INFO_USERNAME));
+	dstr_copy(&stream->password,
+		  obs_service_get_connect_info(
+			  service, OBS_SERVICE_CONNECT_INFO_PASSWORD));
 	dstr_depad(&stream->path);
 	dstr_depad(&stream->key);
 	drop_b = (int64_t)obs_data_get_int(settings, OPT_DROP_THRESHOLD);
@@ -1203,6 +1193,7 @@ static bool init_connect(struct rtmp_stream *stream)
 	bind_ip = obs_data_get_string(settings, OPT_BIND_IP);
 	dstr_copy(&stream->bind_ip, bind_ip);
 
+#ifdef _WIN32
 	stream->new_socket_loop =
 		obs_data_get_bool(settings, OPT_NEWSOCKETLOOP_ENABLED);
 	stream->low_latency_mode =
@@ -1214,6 +1205,10 @@ static bool init_connect(struct rtmp_stream *stream)
 		warn("Disabling network optimizations, not compatible with RTMPS");
 		stream->new_socket_loop = false;
 	}
+#else
+	stream->new_socket_loop = false;
+	stream->low_latency_mode = false;
+#endif
 
 	obs_data_release(settings);
 	return true;
@@ -1579,8 +1574,10 @@ static void rtmp_stream_defaults(obs_data_t *defaults)
 	obs_data_set_default_int(defaults, OPT_PFRAME_DROP_THRESHOLD, 900);
 	obs_data_set_default_int(defaults, OPT_MAX_SHUTDOWN_TIME_SEC, 30);
 	obs_data_set_default_string(defaults, OPT_BIND_IP, "default");
+#ifdef _WIN32
 	obs_data_set_default_bool(defaults, OPT_NEWSOCKETLOOP_ENABLED, false);
 	obs_data_set_default_bool(defaults, OPT_LOWLATENCY_ENABLED, false);
+#endif
 }
 
 static obs_properties_t *rtmp_stream_properties(void *unused)
@@ -1610,10 +1607,12 @@ static obs_properties_t *rtmp_stream_properties(void *unused)
 	}
 	netif_saddr_data_free(&addrs);
 
+#ifdef _WIN32
 	obs_properties_add_bool(props, OPT_NEWSOCKETLOOP_ENABLED,
 				obs_module_text("RTMPStream.NewSocketLoop"));
 	obs_properties_add_bool(props, OPT_LOWLATENCY_ENABLED,
 				obs_module_text("RTMPStream.LowLatencyMode"));
+#endif
 
 	return props;
 }
@@ -1651,6 +1650,11 @@ struct obs_output_info rtmp_output_info = {
 	.id = "rtmp_output",
 	.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED | OBS_OUTPUT_SERVICE |
 		 OBS_OUTPUT_MULTI_TRACK,
+#ifdef NO_CRYPTO
+	.protocols = "RTMP",
+#else
+	.protocols = "RTMP;RTMPS",
+#endif
 	.encoded_video_codecs = "h264",
 	.encoded_audio_codecs = "aac",
 	.get_name = rtmp_stream_getname,

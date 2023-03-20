@@ -263,9 +263,6 @@ static void *enc_create(obs_data_t *settings, obs_encoder_t *encoder,
 			enc->context->sample_rate = closest;
 	}
 
-	if (strcmp(enc->codec->name, "aac") == 0) {
-	}
-
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59, 24, 100)
 	info("bitrate: %" PRId64 ", channels: %d, channel_layout: %x\n",
 	     (int64_t)enc->context->bit_rate / 1000,
@@ -430,7 +427,7 @@ static size_t enc_frame_size(void *data)
 struct obs_encoder_info aac_encoder_info = {
 	.id = "ffmpeg_aac",
 	.type = OBS_ENCODER_AUDIO,
-	.codec = "AAC",
+	.codec = "aac",
 	.get_name = aac_getname,
 	.create = aac_create,
 	.destroy = enc_destroy,
