@@ -1060,9 +1060,6 @@ bool SimpleOutput::SetupStreaming(obs_service_t *service)
 			obs_output_get_signal_handler(streamOutput), "stop",
 			OBSStopStreaming, this);
 
-		bool isEncoded = obs_output_get_flags(streamOutput) &
-				 OBS_OUTPUT_ENCODED;
-
 		outputType = type;
 	}
 
@@ -1577,7 +1574,7 @@ AdvancedOutput::AdvancedOutput(OBSBasic *main_) : BasicOutputHandler(main_)
 		config_get_int(main->Config(), "AdvOut", "VodTrackIndex") - 1;
 	streamArchiveEnc = obs_audio_encoder_create(streamAudioEncoder,
 						    ADV_ARCHIVE_NAME, nullptr,
-						    streamTrack, nullptr);
+						    vodTrack, nullptr);
 	if (!streamArchiveEnc)
 		throw "Failed to create archive audio encoder "
 		      "(advanced output)";
@@ -1975,9 +1972,6 @@ inline void AdvancedOutput::SetupVodTrack(obs_service_t *service)
 
 bool AdvancedOutput::SetupStreaming(obs_service_t *service)
 {
-	int streamTrack =
-		config_get_int(main->Config(), "AdvOut", "TrackIndex");
-
 	if (!useStreamEncoder ||
 	    (!ffmpegOutput && !obs_output_active(fileOutput))) {
 		UpdateStreamSettings();
@@ -2028,9 +2022,6 @@ bool AdvancedOutput::SetupStreaming(obs_service_t *service)
 		stopStreaming.Connect(
 			obs_output_get_signal_handler(streamOutput), "stop",
 			OBSStopStreaming, this);
-
-		bool isEncoded = obs_output_get_flags(streamOutput) &
-				 OBS_OUTPUT_ENCODED;
 
 		outputType = type;
 	}
