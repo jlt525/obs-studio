@@ -1964,11 +1964,11 @@ void OBSBasic::OBSInit()
 
 	blog(LOG_INFO, STARTUP_SEPARATOR);
 
-	ResetOutputs();
-	CreateHotkeys();
-
 	if (!InitService())
 		throw "Failed to initialize service";
+
+	ResetOutputs();
+	CreateHotkeys();
 
 	InitPrimitives();
 
@@ -7293,6 +7293,10 @@ void OBSBasic::StreamingStop(int code, QString last_error)
 
 	case OBS_OUTPUT_ENCODE_ERROR:
 		encode_error = true;
+		break;
+
+	case OBS_OUTPUT_HDR_DISABLED:
+		errorDescription = Str("Output.ConnectFail.HdrDisabled");
 		break;
 
 	default:
