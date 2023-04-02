@@ -379,12 +379,8 @@ OBSBasic::OBSBasic(QWidget *parent)
 
 	UpdateTitleBar();
 
-	connect(ui->scenes->itemDelegate(),
-		SIGNAL(closeEditor(QWidget *,
-				   QAbstractItemDelegate::EndEditHint)),
-		this,
-		SLOT(SceneNameEdited(QWidget *,
-				     QAbstractItemDelegate::EndEditHint)));
+	connect(ui->scenes->itemDelegate(), SIGNAL(closeEditor(QWidget *)),
+		this, SLOT(SceneNameEdited(QWidget *)));
 
 	cpuUsageInfo = os_cpu_usage_info_start();
 	cpuUsageTimer = new QTimer(this);
@@ -509,9 +505,6 @@ OBSBasic::OBSBasic(QWidget *parent)
 	statsDock->move(newPos);
 
 	ui->previewDisabledWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-	connect(ui->previewDisabledWidget,
-		SIGNAL(customContextMenuRequested(const QPoint &)), this,
-		SLOT(PreviewDisabledMenu(const QPoint &)));
 	connect(ui->enablePreviewButton, SIGNAL(clicked()), this,
 		SLOT(TogglePreview()));
 
@@ -3126,7 +3119,8 @@ void OBSBasic::RemoveScene(OBSSource source)
 		api->on_event(OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED);
 }
 
-static bool select_one(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
+static bool select_one(obs_scene_t * /* scene */, obs_sceneitem_t *item,
+		       void *param)
 {
 	obs_sceneitem_t *selectedItem =
 		reinterpret_cast<obs_sceneitem_t *>(param);
@@ -3135,7 +3129,6 @@ static bool select_one(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 
 	obs_sceneitem_select(item, (selectedItem == item));
 
-	UNUSED_PARAMETER(scene);
 	return true;
 }
 
@@ -3926,8 +3919,9 @@ void OBSBasic::CheckForUpdates(bool manualUpdate)
 		&OBSBasic::MacBranchesFetched, Qt::QueuedConnection);
 	updateCheckThread.reset(mut);
 	updateCheckThread->start();
-#endif
+#else
 	UNUSED_PARAMETER(manualUpdate);
+#endif
 }
 
 void OBSBasic::MacBranchesFetched(const QString &branch, bool manualUpdate)
@@ -4029,11 +4023,9 @@ void OBSBasic::DuplicateSelectedScene()
 	}
 }
 
-static bool save_undo_source_enum(obs_scene_t *scene, obs_sceneitem_t *item,
-				  void *p)
+static bool save_undo_source_enum(obs_scene_t * /* scene */,
+				  obs_sceneitem_t *item, void *p)
 {
-	UNUSED_PARAMETER(scene);
-
 	obs_source_t *source = obs_sceneitem_get_source(item);
 	if (obs_obj_is_private(source) && !obs_source_removed(source))
 		return true;
@@ -4061,8 +4053,7 @@ static bool save_undo_source_enum(obs_scene_t *scene, obs_sceneitem_t *item,
 static inline void RemoveSceneAndReleaseNested(obs_source_t *source)
 {
 	obs_source_remove(source);
-	auto cb = [](void *unused, obs_source_t *source) {
-		UNUSED_PARAMETER(unused);
+	auto cb = [](void *, obs_source_t *source) {
 		if (strcmp(obs_source_get_id(source), "scene") == 0)
 			obs_scene_prune_sources(obs_scene_from_source(source));
 		return true;
@@ -4176,9 +4167,8 @@ void OBSBasic::RemoveSelectedScene()
 
 			/* Clear scene, but keep a reference to all sources in the scene to make sure they don't get destroyed */
 			std::vector<OBSSource> existing_sources;
-			auto cb = [](obs_scene_t *scene, obs_sceneitem_t *item,
+			auto cb = [](obs_scene_t *, obs_sceneitem_t *item,
 				     void *data) {
-				UNUSED_PARAMETER(scene);
 				std::vector<OBSSource> *existing =
 					(std::vector<OBSSource> *)data;
 				OBSSource source =
@@ -4393,7 +4383,7 @@ void OBSBasic::DrawBackdrop(float cx, float cy)
 	GS_DEBUG_MARKER_END();
 }
 
-void OBSBasic::RenderMain(void *data, uint32_t cx, uint32_t cy)
+void OBSBasic::RenderMain(void *data, uint32_t, uint32_t)
 {
 	GS_DEBUG_MARKER_BEGIN(GS_DEBUG_COLOR_DEFAULT, "RenderMain");
 
@@ -4469,9 +4459,6 @@ void OBSBasic::RenderMain(void *data, uint32_t cx, uint32_t cy)
 	gs_viewport_pop();
 
 	GS_DEBUG_MARKER_END();
-
-	UNUSED_PARAMETER(cx);
-	UNUSED_PARAMETER(cy);
 }
 
 /* Main class functions */
@@ -4872,9 +4859,8 @@ void OBSBasic::ClearSceneData()
 	copyFiltersSource = nullptr;
 	copyFilter = nullptr;
 
-	auto cb = [](void *unused, obs_source_t *source) {
+	auto cb = [](void *, obs_source_t *source) {
 		obs_source_remove(source);
-		UNUSED_PARAMETER(unused);
 		return true;
 	};
 
@@ -5230,7 +5216,7 @@ void OBSBasic::on_actionMixerToolbarMenu_triggered()
 }
 
 void OBSBasic::on_scenes_currentItemChanged(QListWidgetItem *current,
-					    QListWidgetItem *prev)
+					    QListWidgetItem *)
 {
 	OBSSource source;
 
@@ -5252,8 +5238,6 @@ void OBSBasic::on_scenes_currentItemChanged(QListWidgetItem *current,
 		api->on_event(OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED);
 
 	UpdateContextBar();
-
-	UNUSED_PARAMETER(prev);
 }
 
 void OBSBasic::EditSceneName()
@@ -6559,8 +6543,7 @@ static void RenameListItem(OBSBasic *parent, QListWidget *listWidget,
 	}
 }
 
-void OBSBasic::SceneNameEdited(QWidget *editor,
-			       QAbstractItemDelegate::EndEditHint endHint)
+void OBSBasic::SceneNameEdited(QWidget *editor)
 {
 	OBSScene scene = GetCurrentScene();
 	QLineEdit *edit = qobject_cast<QLineEdit *>(editor);
@@ -6576,8 +6559,6 @@ void OBSBasic::SceneNameEdited(QWidget *editor,
 
 	if (api)
 		api->on_event(OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED);
-
-	UNUSED_PARAMETER(endHint);
 }
 
 void OBSBasic::OpenFilters(OBSSource source)
@@ -8103,14 +8084,12 @@ QModelIndexList OBSBasic::GetAllSelectedSourceItems()
 	return ui->sources->selectionModel()->selectedIndexes();
 }
 
-void OBSBasic::on_preview_customContextMenuRequested(const QPoint &pos)
+void OBSBasic::on_preview_customContextMenuRequested()
 {
 	CreateSourcePopupMenu(GetTopSelectedSourceItem(), true);
-
-	UNUSED_PARAMETER(pos);
 }
 
-void OBSBasic::ProgramViewContextMenuRequested(const QPoint &)
+void OBSBasic::ProgramViewContextMenuRequested()
 {
 	QMenu popup(this);
 	QPointer<QMenu> studioProgramProjector;
@@ -8133,7 +8112,7 @@ void OBSBasic::ProgramViewContextMenuRequested(const QPoint &)
 	popup.exec(QCursor::pos());
 }
 
-void OBSBasic::PreviewDisabledMenu(const QPoint &pos)
+void OBSBasic::on_previewDisabledWidget_customContextMenuRequested()
 {
 	QMenu popup(this);
 	delete previewProjectorMain;
@@ -8154,8 +8133,6 @@ void OBSBasic::PreviewDisabledMenu(const QPoint &pos)
 	popup.addMenu(previewProjectorMain);
 	popup.addAction(previewWindow);
 	popup.exec(QCursor::pos());
-
-	UNUSED_PARAMETER(pos);
 }
 
 void OBSBasic::on_actionAlwaysOnTop_triggered()
@@ -8392,7 +8369,7 @@ void OBSBasic::on_actionPasteTransform_triggered()
 		undo_redo, undo_redo, undo_data, redo_data);
 }
 
-static bool reset_tr(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
+static bool reset_tr(obs_scene_t * /* scene */, obs_sceneitem_t *item, void *)
 {
 	if (obs_sceneitem_is_group(item))
 		obs_sceneitem_group_enum_items(item, reset_tr, nullptr);
@@ -8418,8 +8395,6 @@ static bool reset_tr(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 
 	obs_sceneitem_defer_update_end(item);
 
-	UNUSED_PARAMETER(scene);
-	UNUSED_PARAMETER(param);
 	return true;
 }
 
@@ -8484,8 +8459,8 @@ static void SetItemTL(obs_sceneitem_t *item, const vec3 &tl)
 	obs_sceneitem_set_pos(item, &pos);
 }
 
-static bool RotateSelectedSources(obs_scene_t *scene, obs_sceneitem_t *item,
-				  void *param)
+static bool RotateSelectedSources(obs_scene_t * /* scene */,
+				  obs_sceneitem_t *item, void *param)
 {
 	if (obs_sceneitem_is_group(item))
 		obs_sceneitem_group_enum_items(item, RotateSelectedSources,
@@ -8510,7 +8485,6 @@ static bool RotateSelectedSources(obs_scene_t *scene, obs_sceneitem_t *item,
 
 	SetItemTL(item, tl);
 
-	UNUSED_PARAMETER(scene);
 	return true;
 };
 
@@ -8565,8 +8539,8 @@ void OBSBasic::on_actionRotate180_triggered()
 			  undo_redo, undo_redo, undo_data, redo_data);
 }
 
-static bool MultiplySelectedItemScale(obs_scene_t *scene, obs_sceneitem_t *item,
-				      void *param)
+static bool MultiplySelectedItemScale(obs_scene_t * /* scene */,
+				      obs_sceneitem_t *item, void *param)
 {
 	vec2 &mul = *reinterpret_cast<vec2 *>(param);
 
@@ -8589,7 +8563,6 @@ static bool MultiplySelectedItemScale(obs_scene_t *scene, obs_sceneitem_t *item,
 
 	SetItemTL(item, tl);
 
-	UNUSED_PARAMETER(scene);
 	return true;
 }
 
@@ -8631,8 +8604,8 @@ void OBSBasic::on_actionFlipVertical_triggered()
 			  undo_redo, undo_redo, undo_data, redo_data);
 }
 
-static bool CenterAlignSelectedItems(obs_scene_t *scene, obs_sceneitem_t *item,
-				     void *param)
+static bool CenterAlignSelectedItems(obs_scene_t * /* scene */,
+				     obs_sceneitem_t *item, void *param)
 {
 	obs_bounds_type boundsType =
 		*reinterpret_cast<obs_bounds_type *>(param);
@@ -8661,7 +8634,6 @@ static bool CenterAlignSelectedItems(obs_scene_t *scene, obs_sceneitem_t *item,
 
 	obs_sceneitem_set_info(item, &itemInfo);
 
-	UNUSED_PARAMETER(scene);
 	return true;
 }
 
