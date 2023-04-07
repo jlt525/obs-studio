@@ -1374,9 +1374,9 @@ extern void CheckExistingCookieId();
 #if OBS_RELEASE_CANDIDATE == 0 && OBS_BETA == 0
 #define DEFAULT_CONTAINER "mkv"
 #elif defined(__APPLE__)
-#define DEFAULT_CONTAINER "fmov"
+#define DEFAULT_CONTAINER "fragmented_mov"
 #else
-#define DEFAULT_CONTAINER "fmp4"
+#define DEFAULT_CONTAINER "fragmented_mp4"
 #endif
 
 bool OBSBasic::InitBasicConfigDefaults()
@@ -1474,23 +1474,37 @@ bool OBSBasic::InitBasicConfigDefaults()
 
 	/* ----------------------------------------------------- */
 	/* Migrate old container selection (if any) to new key.  */
-	if (!config_has_user_value(basicConfig, "SimpleOutput", "RecFormat2") &&
-	    config_has_user_value(basicConfig, "SimpleOutput", "RecFormat")) {
-		const char *old_format = config_get_string(
-			basicConfig, "SimpleOutput", "RecFormat");
-		config_set_string(basicConfig, "SimpleOutput", "RecFormat2",
-				  old_format);
-		changed = true;
-	}
 
-	if (!config_has_user_value(basicConfig, "AdvOut", "RecFormat2") &&
-	    config_has_user_value(basicConfig, "AdvOut", "RecFormat")) {
-		const char *old_format =
-			config_get_string(basicConfig, "AdvOut", "RecFormat");
-		config_set_string(basicConfig, "AdvOut", "RecFormat2",
-				  old_format);
-		changed = true;
-	}
+	auto MigrateFormat = [&](const char *section) {
+		bool has_old_key = config_has_user_value(basicConfig, section,
+							 "RecFormat");
+		bool has_new_key = config_has_user_value(basicConfig, section,
+							 "RecFormat2");
+		if (!has_new_key && !has_old_key)
+			return;
+
+		string old_format = config_get_string(
+			basicConfig, section,
+			has_new_key ? "RecFormat2" : "RecFormat");
+		string new_format = old_format;
+		if (old_format == "ts")
+			new_format = "mpegts";
+		else if (old_format == "m3u8")
+			new_format = "hls";
+		else if (old_format == "fmp4")
+			new_format = "fragmented_mp4";
+		else if (old_format == "fmov")
+			new_format = "fragmented_mov";
+
+		if (new_format != old_format || !has_new_key) {
+			config_set_string(basicConfig, section, "RecFormat2",
+					  new_format.c_str());
+			changed = true;
+		}
+	};
+
+	MigrateFormat("AdvOut");
+	MigrateFormat("SimpleOutput");
 
 	/* ----------------------------------------------------- */
 
@@ -1846,9 +1860,6 @@ void OBSBasic::ResetOutputs()
 		outputHandler->Update();
 	}
 }
-
-static void AddProjectorMenuMonitors(QMenu *parent, QObject *target,
-				     const char *slot);
 
 #define STARTUP_SEPARATOR \
 	"==== Startup complete ==============================================="
@@ -6370,9 +6381,8 @@ void OBSBasic::UploadLog(const char *subdir, const char *file, const bool crash)
 		logUploadThread->wait();
 	}
 
-	RemoteTextThread *thread =
-		new RemoteTextThread("https://obsproject.com/logs/upload",
-				     "text/plain", ss.str().c_str());
+	RemoteTextThread *thread = new RemoteTextThread(
+		"https://obsproject.com/logs/upload", "text/plain", ss.str());
 
 	logUploadThread.reset(thread);
 	if (crash) {
@@ -7395,11 +7405,11 @@ void OBSBasic::AutoRemux(QString input, bool no_show)
 	const obs_encoder_t *videoEncoder =
 		obs_output_get_video_encoder(outputHandler->fileOutput);
 	const char *codecName = obs_encoder_get_codec(videoEncoder);
-	string format = config_get_string(
+	const char *format = config_get_string(
 		config, isSimpleMode ? "SimpleOutput" : "AdvOut", "RecFormat2");
 
 	/* Retain original container for fMP4/fMOV */
-	if (format == "fmp4" || format == "fmov") {
+	if (strncmp(format, "fragmented", 10) == 0) {
 		output += "remuxed." + suffix;
 	} else if (strcmp(codecName, "prores") == 0) {
 		output += "mov";

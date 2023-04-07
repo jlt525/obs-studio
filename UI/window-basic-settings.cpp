@@ -1166,18 +1166,18 @@ void OBSBasicSettings::LoadFormats()
 	ui->simpleOutRecFormat->addItem(FORMAT_STR("MKV"), "mkv");
 	ui->simpleOutRecFormat->addItem(FORMAT_STR("MP4"), "mp4");
 	ui->simpleOutRecFormat->addItem(FORMAT_STR("MOV"), "mov");
-	ui->simpleOutRecFormat->addItem(FORMAT_STR("fMP4"), "fmp4");
-	ui->simpleOutRecFormat->addItem(FORMAT_STR("fMOV"), "fmov");
-	ui->simpleOutRecFormat->addItem(FORMAT_STR("TS"), "ts");
+	ui->simpleOutRecFormat->addItem(FORMAT_STR("fMP4"), "fragmented_mp4");
+	ui->simpleOutRecFormat->addItem(FORMAT_STR("fMOV"), "fragmented_mov");
+	ui->simpleOutRecFormat->addItem(FORMAT_STR("TS"), "mpegts");
 
 	ui->advOutRecFormat->addItem(FORMAT_STR("FLV"), "flv");
 	ui->advOutRecFormat->addItem(FORMAT_STR("MKV"), "mkv");
 	ui->advOutRecFormat->addItem(FORMAT_STR("MP4"), "mp4");
 	ui->advOutRecFormat->addItem(FORMAT_STR("MOV"), "mov");
-	ui->advOutRecFormat->addItem(FORMAT_STR("fMP4"), "fmp4");
-	ui->advOutRecFormat->addItem(FORMAT_STR("fMOV"), "fmov");
-	ui->advOutRecFormat->addItem(FORMAT_STR("TS"), "ts");
-	ui->advOutRecFormat->addItem(FORMAT_STR("HLS"), "m3u8");
+	ui->advOutRecFormat->addItem(FORMAT_STR("fMP4"), "fragmented_mp4");
+	ui->advOutRecFormat->addItem(FORMAT_STR("fMOV"), "fragmented_mov");
+	ui->advOutRecFormat->addItem(FORMAT_STR("TS"), "mpegts");
+	ui->advOutRecFormat->addItem(FORMAT_STR("HLS"), "hls");
 
 #undef FORMAT_STR
 }
@@ -3144,7 +3144,7 @@ void OBSBasicSettings::LoadHotkeySettings(obs_hotkey_id ignoreKey)
 		if (!encoder)
 			return true;
 
-		encoders.emplace_back(move(encoder), label, hw);
+		encoders.emplace_back(std::move(encoder), label, hw);
 		return false;
 	};
 
@@ -3156,7 +3156,7 @@ void OBSBasicSettings::LoadHotkeySettings(obs_hotkey_id ignoreKey)
 		if (!output)
 			return true;
 
-		outputs.emplace_back(move(output), label, hw);
+		outputs.emplace_back(std::move(output), label, hw);
 		return false;
 	};
 
@@ -3169,7 +3169,7 @@ void OBSBasicSettings::LoadHotkeySettings(obs_hotkey_id ignoreKey)
 		if (!service)
 			return true;
 
-		services.emplace_back(move(service), label, hw);
+		services.emplace_back(std::move(service), label, hw);
 		return false;
 	};
 
@@ -4684,17 +4684,20 @@ void OBSBasicSettings::SpeakerLayoutChanged(int idx)
 		 */
 		PopulateSimpleBitrates(ui->simpleOutputABitrate, isOpus);
 
-		const char *encoder_id = QT_TO_UTF8(
-			ui->advOutAEncoder->currentData().toString());
-		QString rec_encoder_id =
-			ui->advOutRecAEncoder->currentData().toString();
+		string stream_encoder_id = ui->advOutAEncoder->currentData()
+						   .toString()
+						   .toStdString();
+		string record_encoder_id = ui->advOutRecAEncoder->currentData()
+						   .toString()
+						   .toStdString();
 		PopulateAdvancedBitrates(
 			{ui->advOutTrack1Bitrate, ui->advOutTrack2Bitrate,
 			 ui->advOutTrack3Bitrate, ui->advOutTrack4Bitrate,
 			 ui->advOutTrack5Bitrate, ui->advOutTrack6Bitrate},
-			encoder_id,
-			rec_encoder_id == "none" ? encoder_id
-						 : QT_TO_UTF8(rec_encoder_id));
+			stream_encoder_id.c_str(),
+			record_encoder_id == "none"
+				? stream_encoder_id.c_str()
+				: record_encoder_id.c_str());
 	} else {
 		/*
 		 * Reset audio bitrate for simple and adv mode, update list of
@@ -4996,13 +4999,18 @@ static const unordered_set<string> builtin_codecs = {
 static const unordered_map<string, unordered_set<string>> codec_compat = {
 	// Technically our muxer supports HEVC and AV1 as well, but nothing else does
 	{"flv", {"h264", "aac"}},
-	{"ts", {"h264", "hevc", "aac", "opus"}},
-	{"m3u8",
+	{"mpegts", {"h264", "hevc", "aac", "opus"}},
+	{"hls",
 	 {"h264", "hevc", "aac"}}, // Also using MPEG-TS, but no Opus support
 	{"mov",
 	 {"h264", "hevc", "prores", "aac", "alac", "pcm_s16le", "pcm_s24le",
 	  "pcm_f32le"}},
 	{"mp4", {"h264", "hevc", "av1", "aac", "opus", "alac", "flac"}},
+	{"fragmented_mov",
+	 {"h264", "hevc", "prores", "aac", "alac", "pcm_s16le", "pcm_s24le",
+	  "pcm_f32le"}},
+	{"fragmented_mp4",
+	 {"h264", "hevc", "av1", "aac", "opus", "alac", "flac"}},
 	// MKV supports everything
 	{"mkv", {}},
 };
@@ -5020,12 +5028,12 @@ static bool ContainerSupportsCodec(const string &container, const string &codec)
 	return codecs.count(codec) > 0;
 }
 
-static void DisableIncompatibleCodecs(QComboBox *cbox, const string &format,
+static void DisableIncompatibleCodecs(QComboBox *cbox, const QString &format,
+				      const QString &formatName,
 				      const QString &streamEncoder)
 {
 	QString strEncLabel =
 		QTStr("Basic.Settings.Output.Adv.Recording.UseStreamEncoder");
-	QString formatUpper = QString::fromStdString(format).toUpper();
 	QString recEncoder = cbox->currentData().toString();
 
 	/* Check if selected encoders and output format are compatible, disable incompatible items. */
@@ -5041,11 +5049,14 @@ static void DisableIncompatibleCodecs(QComboBox *cbox, const string &format,
 							   encoderId.c_str());
 		const char *codec = obs_get_encoder_codec(encoderId.c_str());
 
-		bool is_compatible = ContainerSupportsCodec(format, codec);
+		bool is_compatible =
+			ContainerSupportsCodec(format.toStdString(), codec);
 		/* Fall back to FFmpeg check if codec not one of the built-in ones. */
-		if (!is_compatible && !builtin_codecs.count(codec))
-			is_compatible = ff_format_codec_compatible(
-				codec, format.c_str());
+		if (!is_compatible && !builtin_codecs.count(codec)) {
+			string ext = GetFormatExt(QT_TO_UTF8(format));
+			is_compatible =
+				ff_format_codec_compatible(codec, ext.c_str());
+		}
 
 		QStandardItemModel *model =
 			dynamic_cast<QStandardItemModel *>(cbox->model());
@@ -5061,7 +5072,7 @@ static void DisableIncompatibleCodecs(QComboBox *cbox, const string &format,
 			item->setFlags(Qt::NoItemFlags);
 			encDisplayName += " ";
 			encDisplayName += QTStr("CodecCompat.Incompatible")
-						  .arg(formatUpper);
+						  .arg(formatName);
 		}
 
 		item->setText(encDisplayName);
@@ -5075,6 +5086,7 @@ static void DisableIncompatibleCodecs(QComboBox *cbox, const string &format,
 void OBSBasicSettings::AdvOutRecCheckCodecs()
 {
 	QString recFormat = ui->advOutRecFormat->currentData().toString();
+	QString recFormatName = ui->advOutRecFormat->currentText();
 
 	/* Set tooltip if available */
 	QString tooltip =
@@ -5085,22 +5097,17 @@ void OBSBasicSettings::AdvOutRecCheckCodecs()
 	else
 		ui->advOutRecFormat->setToolTip(nullptr);
 
-	string format = recFormat.toStdString();
-	/* Remove leading "f" for fragmented MP4/MOV */
-	if (format == "fmp4" || format == "fmov")
-		format = format.erase(0, 1);
-
 	QString streamEncoder = ui->advOutEncoder->currentData().toString();
-
 	QString streamAudioEncoder =
 		ui->advOutAEncoder->currentData().toString();
 
 	/* Disable the signals to prevent AdvOutRecCheckWarnings to be called here. */
 	ui->advOutRecEncoder->blockSignals(true);
 	ui->advOutRecAEncoder->blockSignals(true);
-	DisableIncompatibleCodecs(ui->advOutRecEncoder, format, streamEncoder);
-	DisableIncompatibleCodecs(ui->advOutRecAEncoder, format,
-				  streamAudioEncoder);
+	DisableIncompatibleCodecs(ui->advOutRecEncoder, recFormat,
+				  recFormatName, streamEncoder);
+	DisableIncompatibleCodecs(ui->advOutRecAEncoder, recFormat,
+				  recFormatName, streamAudioEncoder);
 	ui->advOutRecEncoder->blockSignals(false);
 	ui->advOutRecAEncoder->blockSignals(false);
 
@@ -5714,7 +5721,6 @@ static void DisableIncompatibleSimpleCodecs(QComboBox *cbox,
 {
 	/* Unlike in advanced mode the available simple mode encoders are
 	 * hardcoded, so this check is also a simpler, hardcoded one. */
-	QString formatUpper = QString(format).toUpper();
 	QString encoder = cbox->currentData().toString();
 
 	bool currentCompatible = true;
@@ -5736,8 +5742,8 @@ static void DisableIncompatibleSimpleCodecs(QComboBox *cbox,
 			dynamic_cast<QStandardItemModel *>(cbox->model());
 		QStandardItem *item = model->item(idx);
 
-		if (ContainerSupportsCodec(QT_TO_UTF8(format),
-					   QT_TO_UTF8(codec))) {
+		if (ContainerSupportsCodec(format.toStdString(),
+					   codec.toStdString())) {
 			item->setFlags(Qt::ItemIsSelectable |
 				       Qt::ItemIsEnabled);
 		} else {
@@ -5759,20 +5765,21 @@ static void DisableIncompatibleSimpleContainer(QComboBox *cbox,
 {
 	/* Similar to above, but works in reverse to disable incompatible formats
 	 * based on the encoder selection. */
-	QString aCodec = aEncoder;
-	QString vCodec = obs_get_encoder_codec(
+	string vCodec = obs_get_encoder_codec(
 		get_simple_output_encoder(QT_TO_UTF8(vEncoder)));
+	string aCodec = aEncoder.toStdString();
 
 	bool currentCompatible = true;
 	for (int idx = 0; idx < cbox->count(); idx++) {
 		QString format = cbox->itemData(idx).toString();
+		string formatStr = format.toStdString();
 
 		QStandardItemModel *model =
 			dynamic_cast<QStandardItemModel *>(cbox->model());
 		QStandardItem *item = model->item(idx);
 
-		if (ContainerSupportsCodec(QT_TO_UTF8(format),
-					   QT_TO_UTF8(vCodec))) {
+		if (ContainerSupportsCodec(formatStr, vCodec) &&
+		    ContainerSupportsCodec(formatStr, aCodec)) {
 			item->setFlags(Qt::ItemIsSelectable |
 				       Qt::ItemIsEnabled);
 		} else {

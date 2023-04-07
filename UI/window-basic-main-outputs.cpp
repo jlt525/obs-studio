@@ -1297,35 +1297,26 @@ bool SimpleOutput::ConfigureRecording(bool updateReplayBuffer)
 	int tracks =
 		config_get_int(main->Config(), "SimpleOutput", "RecTracks");
 
-	bool is_fragmented = strcmp(format, "fmp4") == 0 ||
-			     strcmp(format, "fmov") == 0;
+	bool is_fragmented = strncmp(format, "fragmented", 10) == 0;
 
 	string f;
-	string strPath;
-
-	if (is_fragmented)
-		++format;
 
 	OBSDataAutoRelease settings = obs_data_create();
 	if (updateReplayBuffer) {
 		f = GetFormatString(filenameFormat, rbPrefix, rbSuffix);
-		strPath = GetOutputFilename(path, ffmpegOutput ? "avi" : format,
-					    noSpace, overwriteIfExists,
-					    f.c_str());
+		string ext = GetFormatExt(format);
 		obs_data_set_string(settings, "directory", path);
 		obs_data_set_string(settings, "format", f.c_str());
-		obs_data_set_string(settings, "extension", format);
+		obs_data_set_string(settings, "extension", ext.c_str());
 		obs_data_set_bool(settings, "allow_spaces", !noSpace);
 		obs_data_set_int(settings, "max_time_sec", rbTime);
 		obs_data_set_int(settings, "max_size_mb",
 				 usingRecordingPreset ? rbSize : 0);
 	} else {
 		f = GetFormatString(filenameFormat, nullptr, nullptr);
-		strPath = GetRecordingFilename(path,
-					       ffmpegOutput ? "avi" : format,
-					       noSpace, overwriteIfExists,
-					       f.c_str(), ffmpegOutput,
-					       is_fragmented);
+		string strPath = GetRecordingFilename(
+			path, ffmpegOutput ? "avi" : format, noSpace,
+			overwriteIfExists, f.c_str(), ffmpegOutput);
 		obs_data_set_string(settings, ffmpegOutput ? "url" : "path",
 				    strPath.c_str());
 		if (ffmpegOutput)
@@ -1782,9 +1773,7 @@ inline void AdvancedOutput::SetupRecording()
 	const char *recFormat =
 		config_get_string(main->Config(), "AdvOut", "RecFormat2");
 
-	bool is_fragmented = strcmp(recFormat, "fmp4") == 0 ||
-			     strcmp(recFormat, "fmov") == 0;
-
+	bool is_fragmented = strncmp(recFormat, "fragmented", 10) == 0;
 	bool flv = strcmp(recFormat, "flv") == 0;
 
 	if (flv)
@@ -1843,14 +1832,14 @@ inline void AdvancedOutput::SetupRecording()
 
 	// Use fragmented MOV/MP4 if user has not already specified custom movflags
 	if (is_fragmented && (!mux || strstr(mux, "movflags") == NULL)) {
-		string mux_fmp4 =
+		string mux_frag =
 			"movflags=frag_keyframe+empty_moov+delay_moov";
 		if (mux) {
-			mux_fmp4 += " ";
-			mux_fmp4 += mux;
+			mux_frag += " ";
+			mux_frag += mux;
 		}
 		obs_data_set_string(settings, "muxer_settings",
-				    mux_fmp4.c_str());
+				    mux_frag.c_str());
 	} else {
 		if (is_fragmented)
 			blog(LOG_WARNING,
@@ -2176,7 +2165,6 @@ bool AdvancedOutput::StartRecording()
 	const char *recFormat;
 	const char *filenameFormat;
 	bool noSpace = false;
-	bool fragmented = false;
 	bool overwriteIfExists = false;
 	bool splitFile;
 	const char *splitFileType;
@@ -2214,16 +2202,10 @@ bool AdvancedOutput::StartRecording()
 		splitFile = config_get_bool(main->Config(), "AdvOut",
 					    "RecSplitFile");
 
-		// Strip leading "f" in case fragmented format was selected
-		if (strcmp(recFormat, "fmp4") == 0 ||
-		    strcmp(recFormat, "fmov") == 0) {
-			++recFormat;
-			fragmented = true;
-		}
-
-		string strPath = GetRecordingFilename(
-			path, recFormat, noSpace, overwriteIfExists,
-			filenameFormat, ffmpegRecording, fragmented);
+		string strPath = GetRecordingFilename(path, recFormat, noSpace,
+						      overwriteIfExists,
+						      filenameFormat,
+						      ffmpegRecording);
 
 		OBSDataAutoRelease settings = obs_data_create();
 		obs_data_set_string(settings, ffmpegRecording ? "url" : "path",
@@ -2244,9 +2226,10 @@ bool AdvancedOutput::StartRecording()
 							 "AdvOut",
 							 "RecSplitFileSize")
 					: 0;
+			string ext = GetFormatExt(recFormat);
 			obs_data_set_string(settings, "directory", path);
 			obs_data_set_string(settings, "format", filenameFormat);
-			obs_data_set_string(settings, "extension", recFormat);
+			obs_data_set_string(settings, "extension", ext.c_str());
 			obs_data_set_bool(settings, "allow_spaces", !noSpace);
 			obs_data_set_bool(settings, "allow_overwrite",
 					  overwriteIfExists);
@@ -2322,20 +2305,14 @@ bool AdvancedOutput::StartReplayBuffer()
 		rbTime = config_get_int(main->Config(), "AdvOut", "RecRBTime");
 		rbSize = config_get_int(main->Config(), "AdvOut", "RecRBSize");
 
-		/* Skip leading f for fragmented formats. */
-		if (strcmp(recFormat, "fmp4") == 0 ||
-		    strcmp(recFormat, "fmov") == 0)
-			++recFormat;
-
 		string f = GetFormatString(filenameFormat, rbPrefix, rbSuffix);
-		string strPath = GetOutputFilename(
-			path, recFormat, noSpace, overwriteIfExists, f.c_str());
+		string ext = GetFormatExt(recFormat);
 
 		OBSDataAutoRelease settings = obs_data_create();
 
 		obs_data_set_string(settings, "directory", path);
 		obs_data_set_string(settings, "format", f.c_str());
-		obs_data_set_string(settings, "extension", recFormat);
+		obs_data_set_string(settings, "extension", ext.c_str());
 		obs_data_set_bool(settings, "allow_spaces", !noSpace);
 		obs_data_set_int(settings, "max_time_sec", rbTime);
 		obs_data_set_int(settings, "max_size_mb",
@@ -2400,21 +2377,22 @@ bool AdvancedOutput::ReplayBufferActive() const
 
 /* ------------------------------------------------------------------------ */
 
-void BasicOutputHandler::SetupAutoRemux(const char *&ext, bool is_fragmented)
+void BasicOutputHandler::SetupAutoRemux(const char *&container)
 {
 	bool autoRemux = config_get_bool(main->Config(), "Video", "AutoRemux");
-	if (autoRemux && !is_fragmented && strcmp(ext, "mp4") == 0)
-		ext = "mkv";
+	if (autoRemux && strcmp(container, "mp4") == 0)
+		container = "mkv";
 }
 
 std::string BasicOutputHandler::GetRecordingFilename(
-	const char *path, const char *ext, bool noSpace, bool overwrite,
-	const char *format, bool ffmpeg, bool is_fragmented)
+	const char *path, const char *container, bool noSpace, bool overwrite,
+	const char *format, bool ffmpeg)
 {
 	if (!ffmpeg)
-		SetupAutoRemux(ext, is_fragmented);
+		SetupAutoRemux(container);
 
-	string dst = GetOutputFilename(path, ext, noSpace, overwrite, format);
+	string dst =
+		GetOutputFilename(path, container, noSpace, overwrite, format);
 	lastRecordingPath = dst;
 	return dst;
 }
