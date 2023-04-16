@@ -5993,7 +5993,8 @@ QMenu *OBSBasic::CreateAddSourcePopupMenu()
 		QList<QAction *> actions = menu->actions();
 
 		for (QAction *menuAction : actions) {
-			if (menuAction->text().compare(name) >= 0)
+			if (menuAction->text().compare(
+				    name, Qt::CaseInsensitive) >= 0)
 				return menuAction;
 		}
 
