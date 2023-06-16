@@ -262,12 +262,14 @@ void OBSBasicSettings::SaveStream1Settings()
 		obs_data_set_bool(settings, "bwtest", false);
 	}
 
-	if (whip)
+	if (whip) {
+		obs_data_set_string(settings, "service", "WHIP");
 		obs_data_set_string(settings, "bearer_token",
 				    QT_TO_UTF8(ui->key->text()));
-	else
+	} else {
 		obs_data_set_string(settings, "key",
 				    QT_TO_UTF8(ui->key->text()));
+	}
 
 	OBSServiceAutoRelease newService = obs_service_create(
 		service_id, "default_service", settings, hotkeyData);
@@ -387,7 +389,10 @@ void OBSBasicSettings::LoadServices(bool showAll)
 	for (QString &name : names)
 		ui->service->addItem(name);
 
-	ui->service->insertItem(0, QTStr("WHIP"), QVariant((int)ListOpt::WHIP));
+	if (obs_is_output_protocol_registered("WHIP")) {
+		ui->service->addItem(QTStr("WHIP"),
+				     QVariant((int)ListOpt::WHIP));
+	}
 
 	if (!showAll) {
 		ui->service->addItem(
@@ -600,7 +605,10 @@ QString OBSBasicSettings::FindProtocol()
 
 		obs_properties_destroy(props);
 
-		return QT_UTF8(obs_data_get_string(settings, "protocol"));
+		const char *protocol =
+			obs_data_get_string(settings, "protocol");
+		if (protocol && *protocol)
+			return QT_UTF8(protocol);
 	}
 
 	return QString("RTMP");
