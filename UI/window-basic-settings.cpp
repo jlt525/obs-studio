@@ -975,7 +975,6 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	connect(ui->advOutRecFormat, SIGNAL(currentIndexChanged(int)), this,
 		SLOT(AdvOutRecCheckCodecs()));
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
 	// Set placeholder used when selection was reset due to incompatibilities
 	ui->advOutRecEncoder->setPlaceholderText(
 		QTStr("CodecCompat.CodecPlaceholder"));
@@ -987,7 +986,6 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 		QTStr("CodecCompat.CodecPlaceholder"));
 	ui->simpleOutRecFormat->setPlaceholderText(
 		QTStr("CodecCompat.ContainerPlaceholder"));
-#endif
 
 	SimpleRecordingQualityChanged();
 	AdvOutSplitFileChanged();
