@@ -44,13 +44,16 @@ runs:
         : Validate XML 💯
         if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
         shopt -s extglob
+        shopt -s globstar
 
-        changes=($(git diff --name-only HEAD~1 HEAD -- UI/forms))
+        if (( ! GITHUB_REF_BEFORE )); then GITHUB_REF_BEFORE='4b825dc642cb6eb9a060e54bf8d69288fbee4904'; fi
+
+        changes=($(git diff --name-only HEAD~1 HEAD -- UI/forms/**/*.ui))
         case "${GITHUB_EVENT_NAME}" in
-          pull_request) changes=($(git diff --name-only origin/"${GITHUB_BASE_REF}" HEAD -- UI/forms)) ;;
+          pull_request) changes=($(git diff --name-only origin/"${GITHUB_BASE_REF}" HEAD -- UI/forms/**/*.ui)) ;;
           push)
             if [[ "${GITHUB_EVENT_FORCED}" == false ]]; then
-              changes=($(git diff --name-only ${GITHUB_REF_BEFORE} HEAD -- UI/forms))
+              changes=($(git diff --name-only ${GITHUB_REF_BEFORE} HEAD -- UI/forms/**/*.ui))
             fi
             ;;
           *) ;;
