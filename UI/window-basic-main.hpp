@@ -1131,6 +1131,7 @@ private slots:
 	void on_actionHelpPortal_triggered();
 	void on_actionWebsite_triggered();
 	void on_actionDiscord_triggered();
+	void on_actionReleaseNotes_triggered();
 
 	void on_preview_customContextMenuRequested();
 	void ProgramViewContextMenuRequested();
@@ -1266,6 +1267,8 @@ public:
 	YouTubeAppDock *GetYouTubeAppDock();
 #endif
 };
+
+extern bool cef_js_avail;
 
 class SceneRenameDelegate : public QStyledItemDelegate {
 	Q_OBJECT

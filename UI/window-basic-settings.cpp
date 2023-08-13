@@ -333,8 +333,8 @@ void RestrictResetBitrates(initializer_list<QComboBox *> boxes, int maxbitrate);
 #define COMBO_CHANGED   &QComboBox::currentIndexChanged
 #define EDIT_CHANGED    &QLineEdit::textChanged
 #define CBEDIT_CHANGED  &QComboBox::editTextChanged
-#define CHECK_CHANGED   &QCheckBox::clicked
-#define GROUP_CHANGED   &QGroupBox::clicked
+#define CHECK_CHANGED   &QCheckBox::toggled
+#define GROUP_CHANGED   &QGroupBox::toggled
 #define SCROLL_CHANGED  &QSpinBox::valueChanged
 #define DSCROLL_CHANGED &QDoubleSpinBox::valueChanged
 
@@ -4258,18 +4258,10 @@ void OBSBasicSettings::on_listWidget_itemSelectionChanged()
 	pageIndex = row;
 }
 
-void OBSBasicSettings::on_buttonBox_clicked(QAbstractButton *button)
+void OBSBasicSettings::UpdateYouTubeAppDockSettings()
 {
-	QDialogButtonBox::ButtonRole val = ui->buttonBox->buttonRole(button);
-
-	if (val == QDialogButtonBox::ApplyRole ||
-	    val == QDialogButtonBox::AcceptRole) {
-		if (!QueryAllowedToClose())
-			return;
-
-		SaveSettings();
-
-#ifdef YOUTUBE_ENABLED
+#if defined(BROWSER_ENABLED) && defined(YOUTUBE_ENABLED)
+	if (cef_js_avail) {
 		std::string service = ui->service->currentText().toStdString();
 		if (IsYouTubeService(service)) {
 			if (!main->GetYouTubeAppDock()) {
@@ -4283,7 +4275,22 @@ void OBSBasicSettings::on_buttonBox_clicked(QAbstractButton *button)
 			}
 			main->DeleteYouTubeAppDock();
 		}
+	}
 #endif
+}
+
+void OBSBasicSettings::on_buttonBox_clicked(QAbstractButton *button)
+{
+	QDialogButtonBox::ButtonRole val = ui->buttonBox->buttonRole(button);
+
+	if (val == QDialogButtonBox::ApplyRole ||
+	    val == QDialogButtonBox::AcceptRole) {
+		if (!QueryAllowedToClose())
+			return;
+
+		SaveSettings();
+
+		UpdateYouTubeAppDockSettings();
 		ClearChanged();
 	}
 
@@ -4869,7 +4876,7 @@ template<> struct hash<obs_key_combination_t> {
 		return h2;
 	}
 };
-}
+} // namespace std
 
 bool OBSBasicSettings::ScanDuplicateHotkeys(QFormLayout *layout)
 {

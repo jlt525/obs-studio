@@ -83,39 +83,25 @@ struct common_frame_rate {
 	media_frames_per_second fps;
 };
 
-}
+} // namespace
 
 Q_DECLARE_METATYPE(frame_rate_tag);
 Q_DECLARE_METATYPE(media_frames_per_second);
 
 void OBSPropertiesView::ReloadProperties()
 {
-	deferUpdate = false;
 	if (weakObj || rawObj) {
 		OBSObject strongObj = GetObject();
 		void *obj = strongObj ? strongObj.Get() : rawObj;
-		if (obj) {
+		if (obj)
 			properties.reset(reloadCallback(obj));
-
-			if (obs_obj_get_type(obj) == OBS_OBJ_TYPE_SOURCE) {
-				enum obs_source_type type = obs_source_get_type(
-					(obs_source_t *)obj);
-				if (type == OBS_SOURCE_TYPE_INPUT ||
-				    type == OBS_SOURCE_TYPE_TRANSITION) {
-					uint32_t flags =
-						obs_properties_get_flags(
-							properties.get());
-					deferUpdate =
-						(flags &
-						 OBS_PROPERTIES_DEFER_UPDATE) !=
-						0;
-				}
-			}
-		}
 	} else {
 		properties.reset(reloadCallback((void *)type.c_str()));
 		obs_properties_apply_settings(properties.get(), settings);
 	}
+
+	uint32_t flags = obs_properties_get_flags(properties.get());
+	deferUpdate = enableDefer && (flags & OBS_PROPERTIES_DEFER_UPDATE) != 0;
 
 	RefreshProperties();
 }
@@ -933,7 +919,7 @@ template<> struct default_delete<obs_data_item_t> {
 	void operator()(obs_data_item_t *item) { obs_data_item_release(&item); }
 };
 
-}
+} // namespace std
 
 template<typename T> static double make_epsilon(T val)
 {
@@ -1010,9 +996,13 @@ static media_frames_per_second make_fps(uint32_t num, uint32_t den)
 }
 
 static const common_frame_rate common_fps[] = {
-	{"60", {60, 1}}, {"59.94", {60000, 1001}}, {"50", {50, 1}},
-	{"48", {48, 1}}, {"30", {30, 1}},          {"29.97", {30000, 1001}},
-	{"25", {25, 1}}, {"24", {24, 1}},          {"23.976", {24000, 1001}},
+	{"240", {240, 1}},         {"144", {144, 1}},
+	{"120", {120, 1}},         {"119.88", {120000, 1001}},
+	{"60", {60, 1}},           {"59.94", {60000, 1001}},
+	{"50", {50, 1}},           {"48", {48, 1}},
+	{"30", {30, 1}},           {"29.97", {30000, 1001}},
+	{"25", {25, 1}},           {"24", {24, 1}},
+	{"23.976", {24000, 1001}},
 };
 
 static void UpdateSimpleFPSSelection(OBSFrameRatePropertyWidget *fpsProps,

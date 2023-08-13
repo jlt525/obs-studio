@@ -50,6 +50,9 @@ YouTubeAppDock::~YouTubeAppDock()
 
 bool YouTubeAppDock::IsYTServiceSelected()
 {
+	if (!cef_js_avail)
+		return false;
+
 	obs_service_t *service_obj = OBSBasic::Get()->GetService();
 	OBSDataAutoRelease settings = obs_service_get_settings(service_obj);
 	const char *service = obs_data_get_string(settings, "service");
@@ -119,24 +122,14 @@ void YouTubeAppDock::AddYouTubeAppDock(const QString &title)
 	this->setWindowTitle(title);
 	this->setAllowedAreas(Qt::AllDockWidgetAreas);
 
-	OBSBasic::Get()->addDockWidget(Qt::RightDockWidgetArea, this);
-	actionYTAppDock = OBSBasic::Get()->AddDockWidget(this);
+	OBSBasic::Get()->AddDockWidget(this, Qt::RightDockWidgetArea);
 
 	if (IsYTServiceSelected()) {
 		const std::string url = InitYTUserUrl();
 		CreateBrowserWidget(url);
-
-		// reload panel layout
-		const char *dockStateStr = config_get_string(
-			App()->GlobalConfig(), "BasicWindow", "DockState");
-		if (dockStateStr) {
-			QByteArray dockState = QByteArray::fromBase64(
-				QByteArray(dockStateStr));
-			OBSBasic::Get()->restoreState(dockState);
-		}
 	} else {
 		this->setVisible(false);
-		actionYTAppDock->setVisible(false);
+		this->toggleViewAction()->setVisible(false);
 	}
 }
 
@@ -164,10 +157,10 @@ void YouTubeAppDock::CreateBrowserWidget(const std::string &url)
 
 void YouTubeAppDock::SetVisibleYTAppDockInMenu(bool visible)
 {
-	if (!actionYTAppDock)
+	if (visible && toggleViewAction()->isVisible())
 		return;
 
-	actionYTAppDock->setVisible(visible);
+	toggleViewAction()->setVisible(visible);
 	this->setVisible(visible);
 }
 
@@ -430,6 +423,9 @@ YoutubeApiWrappers *YouTubeAppDock::GetYTApi()
 
 void YouTubeAppDock::CleanupYouTubeUrls()
 {
+	if (!cef_js_avail)
+		return;
+
 	static constexpr const char *YOUTUBE_VIDEO_URL =
 		"://studio.youtube.com/video/";
 	// remove legacy YouTube Browser Docks (once)

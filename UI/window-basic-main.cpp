@@ -116,6 +116,7 @@ struct QCefCookieManager;
 
 QCef *cef = nullptr;
 QCefCookieManager *panel_cookies = nullptr;
+bool cef_js_avail = false;
 
 void DestroyPanelCookieManager();
 
@@ -125,7 +126,7 @@ template<typename OBSRef> struct SignalContainer {
 	OBSRef ref;
 	vector<shared_ptr<OBSSignal>> handlers;
 };
-}
+} // namespace
 
 extern volatile long insideEventLoop;
 
@@ -521,6 +522,10 @@ OBSBasic::OBSBasic(QWidget *parent)
 	QPoint statsDockPos = curSize / 2 - statsDockSize / 2;
 	QPoint newPos = curPos + statsDockPos;
 	statsDock->move(newPos);
+
+#ifdef HAVE_OBSCONFIG_H
+	ui->actionReleaseNotes->setVisible(true);
+#endif
 
 	ui->previewDisabledWidget->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(ui->enablePreviewButton, &QPushButton::clicked, this,
@@ -2022,6 +2027,7 @@ void OBSBasic::OBSInit()
 
 #ifdef BROWSER_AVAILABLE
 	cef = obs_browser_init_panel();
+	cef_js_avail = cef && obs_browser_qcef_version() >= 3;
 #endif
 
 	OBSDataAutoRelease obsData = obs_get_private_data();
@@ -2190,6 +2196,12 @@ void OBSBasic::OBSInit()
 	}
 #endif
 
+#ifdef YOUTUBE_ENABLED
+	/* setup YouTube app dock */
+	if (YouTubeAppDock::IsYTServiceSelected())
+		youtubeAppDock = new YouTubeAppDock();
+#endif
+
 	const char *dockStateStr = config_get_string(
 		App()->GlobalConfig(), "BasicWindow", "DockState");
 
@@ -2333,12 +2345,6 @@ void OBSBasic::OBSInit()
 
 	UpdatePreviewProgramIndicators();
 	OnFirstLoad();
-
-#ifdef YOUTUBE_ENABLED
-	/* setup YouTube app dock */
-	if (YouTubeAppDock::IsYTServiceSelected())
-		youtubeAppDock = new YouTubeAppDock();
-#endif
 
 	if (!hideWindowOnStart)
 		activateWindow();
@@ -3391,16 +3397,20 @@ void OBSBasic::SourceToolBarActionsSetEnabled()
 
 void OBSBasic::UpdateTransformShortcuts()
 {
+	bool hasVideo = false;
+
 	OBSSource source = obs_sceneitem_get_source(GetCurrentSceneItem());
-	uint32_t flags = obs_source_get_output_flags(source);
-	bool audioOnly = (flags & OBS_SOURCE_VIDEO) == 0;
 
-	ui->actionEditTransform->setEnabled(!audioOnly);
-	ui->actionCopyTransform->setEnabled(!audioOnly);
-	ui->actionPasteTransform->setEnabled(audioOnly ? false
-						       : hasCopiedTransform);
+	if (source) {
+		uint32_t flags = obs_source_get_output_flags(source);
+		hasVideo = (flags & OBS_SOURCE_VIDEO) != 0;
+	}
 
-	ui->actionResetTransform->setEnabled(!audioOnly);
+	ui->actionEditTransform->setEnabled(hasVideo);
+	ui->actionCopyTransform->setEnabled(hasVideo);
+	ui->actionPasteTransform->setEnabled(hasVideo ? hasCopiedTransform
+						      : false);
+	ui->actionResetTransform->setEnabled(hasVideo);
 }
 
 void OBSBasic::UpdateContextBar(bool force)
@@ -8315,6 +8325,14 @@ void OBSBasic::on_actionShowWhatsNew_triggered()
 #endif
 }
 
+void OBSBasic::on_actionReleaseNotes_triggered()
+{
+	QString addr("https://github.com/obsproject/obs-studio/releases");
+	QUrl url(QString("%1/%2").arg(addr, obs_get_version_string()),
+		 QUrl::TolerantMode);
+	QDesktopServices::openUrl(url);
+}
+
 void OBSBasic::on_actionShowSettingsFolder_triggered()
 {
 	char path[512];
@@ -8506,15 +8524,23 @@ YouTubeAppDock *OBSBasic::GetYouTubeAppDock()
 
 void OBSBasic::NewYouTubeAppDock()
 {
+	if (!cef_js_avail)
+		return;
+
 	if (youtubeAppDock)
-		delete youtubeAppDock;
+		RemoveDockWidget(youtubeAppDock->objectName());
+
 	youtubeAppDock = new YouTubeAppDock();
 }
 
 void OBSBasic::DeleteYouTubeAppDock()
 {
+	if (!cef_js_avail)
+		return;
+
 	if (youtubeAppDock)
-		delete youtubeAppDock;
+		RemoveDockWidget(youtubeAppDock->objectName());
+
 	youtubeAppDock = nullptr;
 }
 #endif
@@ -9416,7 +9442,7 @@ void OBSBasic::UpdateTitleBar()
 
 	name << App()->GetVersionString(false);
 	if (safe_mode)
-		name << " (SAFE MODE)";
+		name << " (" << Str("TitleBar.SafeMode") << ")";
 	if (App()->IsPortableMode())
 		name << " - " << Str("TitleBar.PortableMode");
 
