@@ -572,6 +572,7 @@ private:
 	QPointer<QAction> extraBrowserMenuDocksSeparator;
 
 	QList<QSharedPointer<QDockWidget>> extraBrowserDocks;
+	QStringList extraBrowserDockNames;
 	QStringList extraBrowserDockTargets;
 
 	void ClearExtraBrowserDocks();
@@ -670,8 +671,6 @@ private:
 	void UpdatePreviewOverflowSettings();
 
 	bool restartingVCam = false;
-
-	void UpdateTransformShortcuts();
 
 public slots:
 	void DeferSaveBegin();
