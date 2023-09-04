@@ -180,24 +180,23 @@ mfxStatus QSV_Encoder_Internal::Open(qsv_param_t *pParams, enum qsv_codec codec)
 	if (m_bUseD3D11)
 		// Use D3D11 surface
 		sts = Initialize(m_ver, &m_session, &m_mfxAllocator,
-				 &g_DX_Handle, false, false);
+				 &g_DX_Handle, false, false, codec);
 	else if (m_bD3D9HACK)
 		// Use hack
 		sts = Initialize(m_ver, &m_session, &m_mfxAllocator,
-				 &g_DX_Handle, false, true);
+				 &g_DX_Handle, false, true, codec);
 	else
-		sts = Initialize(m_ver, &m_session, NULL, NULL, NULL, NULL);
+		sts = Initialize(m_ver, &m_session, NULL, NULL, NULL, NULL,
+				 codec);
 #else
-	sts = Initialize(m_ver, &m_session, NULL, NULL, false, false);
+	sts = Initialize(m_ver, &m_session, NULL, NULL, false, false, codec);
 #endif
 
 	MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
 
 	m_pmfxENC = new MFXVideoENCODE(m_session);
 
-	sts = InitParams(pParams, codec);
-	MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
-
+	InitParams(pParams, codec);
 	sts = m_pmfxENC->Query(&m_mfxEncParams, &m_mfxEncParams);
 	MSDK_IGNORE_MFX_STS(sts, MFX_WRN_INCOMPATIBLE_VIDEO_PARAM);
 	MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
@@ -260,7 +259,7 @@ mfxStatus QSV_Encoder_Internal::InitParams(qsv_param_t *pParams,
 
 	mfxPlatform platform;
 	MFXVideoCORE_QueryPlatform(m_session, &platform);
-#if defined(_WIN32)
+
 	PRAGMA_WARN_PUSH
 	PRAGMA_WARN_DEPRECATION
 	if (codec == QSV_CODEC_AVC || codec == QSV_CODEC_HEVC) {
@@ -270,7 +269,6 @@ mfxStatus QSV_Encoder_Internal::InitParams(qsv_param_t *pParams,
 		m_mfxEncParams.mfx.LowPower = MFX_CODINGOPTION_ON;
 	}
 	PRAGMA_WARN_POP
-#endif
 
 	m_mfxEncParams.mfx.RateControlMethod = pParams->nRateControl;
 
@@ -965,9 +963,9 @@ mfxStatus QSV_Encoder_Internal::ClearData()
 	}
 
 	if ((m_bUseTexAlloc) && (g_numEncodersOpen <= 0)) {
-		Release();
 		g_DX_Handle = NULL;
 	}
+	Release();
 	MFXVideoENCODE_Close(m_session);
 	return sts;
 }

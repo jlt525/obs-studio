@@ -84,6 +84,10 @@
 #include "windows.h"
 #endif
 
+#ifdef WHATSNEW_ENABLED
+#include "update/models/whatsnew.hpp"
+#endif
+
 #if !defined(_WIN32) && defined(WHATSNEW_ENABLED)
 #include "update/shared-update.hpp"
 #endif
@@ -96,8 +100,6 @@
 #include "ui_ColorSelect.h"
 
 #include <QWindow>
-
-#include "update/models/whatsnew.hpp"
 
 #ifdef ENABLE_WAYLAND
 #include <obs-nix-platform.h>
@@ -4753,14 +4755,14 @@ int OBSBasic::ResetVideo()
 	ovi.gpu_conversion = true;
 	ovi.scale_type = GetScaleType(basicConfig);
 
-	if (ovi.base_width < 8 || ovi.base_height < 8) {
+	if (ovi.base_width < 32 || ovi.base_height < 32) {
 		ovi.base_width = 1920;
 		ovi.base_height = 1080;
 		config_set_uint(basicConfig, "Video", "BaseCX", 1920);
 		config_set_uint(basicConfig, "Video", "BaseCY", 1080);
 	}
 
-	if (ovi.output_width < 8 || ovi.output_height < 8) {
+	if (ovi.output_width < 32 || ovi.output_height < 32) {
 		ovi.output_width = ovi.base_width;
 		ovi.output_height = ovi.base_height;
 		config_set_uint(basicConfig, "Video", "OutputCX",
@@ -4770,30 +4772,16 @@ int OBSBasic::ResetVideo()
 	}
 
 	ret = AttemptToResetVideo(&ovi);
-	if (IS_WIN32 && ret != OBS_VIDEO_SUCCESS) {
-		if (ret == OBS_VIDEO_CURRENTLY_ACTIVE) {
-			blog(LOG_WARNING, "Tried to reset when "
-					  "already active");
-			return ret;
-		}
-
-		/* Try OpenGL if DirectX fails on windows */
-		if (astrcmpi(ovi.graphics_module, DL_OPENGL) != 0) {
-			blog(LOG_WARNING,
-			     "Failed to initialize obs video (%d) "
-			     "with graphics_module='%s', retrying "
-			     "with graphics_module='%s'",
-			     ret, ovi.graphics_module, DL_OPENGL);
-			ovi.graphics_module = DL_OPENGL;
-			ret = AttemptToResetVideo(&ovi);
-		}
-	} else if (ret == OBS_VIDEO_SUCCESS) {
-		ResizePreview(ovi.base_width, ovi.base_height);
-		if (program)
-			ResizeProgram(ovi.base_width, ovi.base_height);
+	if (ret == OBS_VIDEO_CURRENTLY_ACTIVE) {
+		blog(LOG_WARNING, "Tried to reset when already active");
+		return ret;
 	}
 
 	if (ret == OBS_VIDEO_SUCCESS) {
+		ResizePreview(ovi.base_width, ovi.base_height);
+		if (program)
+			ResizeProgram(ovi.base_width, ovi.base_height);
+
 		const float sdr_white_level = (float)config_get_uint(
 			basicConfig, "Video", "SdrWhiteLevel");
 		const float hdr_nominal_peak_level = (float)config_get_uint(
@@ -6063,7 +6051,7 @@ void OBSBasic::CreateSourcePopupMenu(int idx, bool preview)
 
 			resizeOutput->setEnabled(!obs_video_active());
 
-			if (width < 8 || height < 8)
+			if (width < 32 || height < 32)
 				resizeOutput->setEnabled(false);
 
 			scaleFilteringMenu = new QMenu(QTStr("ScaleFiltering"));
@@ -8509,10 +8497,24 @@ YouTubeAppDock *OBSBasic::GetYouTubeAppDock()
 	return youtubeAppDock;
 }
 
+#ifndef SEC_TO_NSEC
+#define SEC_TO_NSEC 1000000000
+#endif
+
 void OBSBasic::NewYouTubeAppDock()
 {
 	if (!cef_js_avail)
 		return;
+
+	/* make sure that the youtube app dock can't be immediately recreated.
+	 * dumb hack. blame chromium. or this particular dock. or both. if CEF
+	 * creates/destroys/creates a widget too quickly it can lead to a
+	 * crash. */
+	uint64_t ts = os_gettime_ns();
+	if ((ts - lastYouTubeAppDockCreationTime) < (5ULL * SEC_TO_NSEC))
+		return;
+
+	lastYouTubeAppDockCreationTime = ts;
 
 	if (youtubeAppDock)
 		RemoveDockWidget(youtubeAppDock->objectName());

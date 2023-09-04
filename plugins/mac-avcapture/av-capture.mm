@@ -903,16 +903,6 @@ static bool init_preset(av_capture *capture, AVCaptureDevice *dev, obs_data_t *s
 static bool operator==(const CMVideoDimensions &a, const CMVideoDimensions &b);
 static CMVideoDimensions get_dimensions(AVCaptureDeviceFormat *format);
 
-static AVCaptureDeviceFormat *find_format(AVCaptureDevice *dev, CMVideoDimensions dims)
-{
-    for (AVCaptureDeviceFormat *format in dev.formats) {
-        if (get_dimensions(format) == dims)
-            return format;
-    }
-
-    return nullptr;
-}
-
 static CMTime convert(media_frames_per_second fps)
 {
     CMTime time {};
@@ -1128,6 +1118,18 @@ static void capture_device(av_capture *capture, AVCaptureDevice *dev, obs_data_t
     obs_data_set_string(settings, "device_name", name);
     obs_data_set_string(settings, "device", dev.uniqueID.UTF8String);
     AVLOG(LOG_INFO, "Selected device '%s'", name);
+    if (@available(macOS 12.0, *)) {
+        if ([dev isPortraitEffectActive])
+            AVLOG(LOG_WARNING, "Portrait effect is active on selected device");
+    }
+    if (@available(macOS 12.3, *)) {
+        if ([dev isCenterStageActive])
+            AVLOG(LOG_WARNING, "Center Stage effect is active on selected device");
+    }
+    if (@available(macOS 13.0, *)) {
+        if ([dev isStudioLightActive])
+            AVLOG(LOG_WARNING, "Studio Light effect is active on selected device");
+    }
 
     if ((capture->use_preset = obs_data_get_bool(settings, "use_preset"))) {
         if (!init_preset(capture, dev, settings))
