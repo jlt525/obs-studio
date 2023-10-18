@@ -1,26 +1,26 @@
 {
     "dependencies": {
         "prebuilt": {
-            "version": "2023-09-28",
+            "version": "2023-10-17",
             "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
             "label": "Pre-Built obs-deps",
             "hashes": {
-                "macos-universal": "62773c30418be33ef2e96bd79ad4a5f8f05627edd860e06b2e8718ac8a48c52b",
-                "windows-x64": "69dc507da14b74d7194c197ab5944619bad0e97eafd94dfde04b2f042c084863",
-                "windows-x86": "8e392432f2394e9eae202023d5d9044f855a6edb94db164165adf10e95a2a71a",
-                "linux-x86_64": "023e8647d4ec1db818a53200ddf4e2f612ba3e605cd9863125c494a9c732bed5"
+                "macos-universal": "3b92fcfa775e5ab4cf239f9bdffcc25446c48eddf56f84c5b3c1994fc633d3c4",
+                "windows-x64": "cab884f24d1a6b8d3b4ca8233194fd70d92c316f47dbfd9e87433dc975e4656d",
+                "windows-x86": "c51a92ffebe55ecc4851c4df214a82358a5f7f83956d52a826f32a05edd5fbaf",
+                "linux-x86_64": "bac65bc64fa83dc014c00605ab96625a237960c98454d844dc05bfd6f8a4c06f"
             }
         },
         "qt6": {
-            "version": "2023-09-28",
+            "version": "2023-10-17",
             "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
             "label": "Pre-Built Qt6",
             "hashes": {
-                "macos-universal": "d4b98bb043aef7e1a2f17faac6208252fb1de1709ab5eb5753370367d5e74bc7",
-                "windows-x64": "ae326dd56af2995776dbcc1cb2bb4de0ab72e31718d046768a53e8d139075053"
+                "macos-universal": "5185d5a61acd3364c93a90f15e137838dfc5bd8d5c2084df8a3b8ba3efd7ef7e",
+                "windows-x64": "634e82fc0840c104e8d9dd9150f4f87a84792ca37c10b73ae6169fb92e637caa"
             },
             "debugSymbols": {
-                "windows-x64": "8e575a0884839faae3d1942d75781051f7938c58c4433e5246f70c79367f78fe"
+                "windows-x64": "5ad2de9fa702a5dad0636c55f2562919745c478732ba2d080c0e1cffca6acd6f"
             }
         },
         "cef": {
@@ -28,15 +28,18 @@
             "baseUrl": "https://cdn-fastly.obsproject.com/downloads",
             "label": "Chromium Embedded Framework",
             "hashes": {
-                "macos-x86_64": "7ef71717ff2e4ff4212274c33f0993729f47c109c464e499544fd3f63586a069",
-                "macos-arm64": "a9da8909202aefc8f35509d03eff9a7c837b5d3b2ed3afb39b67121cb16d457b",
-                "linux-x86_64": "bf4aa9388bab7e94fa945cc3bba16b6da63b6a30f9c0342d42235468b39d84bf",
-                "linux-aarch64": "68d915c9ba2639cba762a54cd3430fce2527aa6355d831d3cfcb6157664206b0",
-                "windows-x64": "c1b47beb7ee42e98f1a41b6d694c26842a4a3d452e44bdf6f758c9785696533d"
+                "macos-x86_64": "140bfd517b4b9d12343ac000abba7bb16eecefe80ecbd7225993d03f0b9c0603",
+                "macos-arm64": "3970a781132b033bb9be6a9fe328a07e97fa7737fdf1575b1c5db24a3e130da1",
+                "linux-x86_64": "1253a6a36c3b8ac5b5ece9bfdb6eae6ab75e49516375fc475e2e871795ad9bea",
+                "linux-aarch64": "66ebcfce94a4527c8dd085a685691d0c43291adab9f2be4f8a0762f4a614083a",
+                "windows-x64": "7480e9ed5688e09919db67237d130eef9a4c24df32ba2a7b8a5587de45ff8e69"
             },
             "revision": {
-                "macos-x86_64": 2,
-                "macos-arm64": 2
+                "macos-x86_64": 4,
+                "macos-arm64": 4,
+                "linux-x86_64": 3,
+                "linux-aarch64": 3,
+                "windows-x64": 3
             }
         }
     },
