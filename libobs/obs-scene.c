@@ -202,16 +202,7 @@ static inline void full_unlock(struct obs_scene *scene)
 	video_unlock(scene);
 }
 
-static void set_visibility(struct obs_scene_item *item, bool vis);
-static inline void detach_sceneitem(struct obs_scene_item *item);
-
-static inline void remove_without_release(struct obs_scene_item *item)
-{
-	item->removed = true;
-	set_visibility(item, false);
-	signal_item_remove(item);
-	detach_sceneitem(item);
-}
+static void obs_sceneitem_remove_internal(obs_sceneitem_t *item);
 
 static void remove_all_items(struct obs_scene *scene)
 {
@@ -228,7 +219,7 @@ static void remove_all_items(struct obs_scene *scene)
 		struct obs_scene_item *del_item = item;
 		item = item->next;
 
-		remove_without_release(del_item);
+		obs_sceneitem_remove_internal(del_item);
 		da_push_back(items, &del_item);
 	}
 
@@ -873,7 +864,7 @@ update_transforms_and_prune_sources(obs_scene_t *scene,
 			struct obs_scene_item *del_item = item;
 			item = item->next;
 
-			remove_without_release(del_item);
+			obs_sceneitem_remove_internal(del_item);
 			da_push_back(*remove_items, &del_item);
 			rebuild_group = true;
 			continue;
@@ -2042,13 +2033,17 @@ static void init_hotkeys(obs_scene_t *scene, obs_sceneitem_t *item,
 	/* Check if legacy keys exists, migrate if necessary */
 	dstr_printf(&legacy, "libobs.show_scene_item.%s", name);
 	hotkey_array = obs_data_get_array(hotkey_data, legacy.array);
-	if (hotkey_array)
+	if (hotkey_array) {
 		obs_data_set_array(hotkey_data, show.array, hotkey_array);
+		obs_data_array_release(hotkey_array);
+	}
 
 	dstr_printf(&legacy, "libobs.hide_scene_item.%s", name);
 	hotkey_array = obs_data_get_array(hotkey_data, legacy.array);
-	if (hotkey_array)
+	if (hotkey_array) {
 		obs_data_set_array(hotkey_data, hide.array, hotkey_array);
+		obs_data_array_release(hotkey_array);
+	}
 
 	item->toggle_visibility = obs_hotkey_pair_register_source(
 		scene->source, show.array, show_desc.array, hide.array,
@@ -2250,37 +2245,34 @@ void obs_sceneitem_release(obs_sceneitem_t *item)
 		obs_sceneitem_destroy(item);
 }
 
-void obs_sceneitem_remove(obs_sceneitem_t *item)
+static void obs_sceneitem_remove_internal(obs_sceneitem_t *item)
 {
-	obs_scene_t *scene;
-
-	if (!item)
-		return;
-
-	scene = item->parent;
-
-	full_lock(scene);
-
-	if (item->removed) {
-		if (scene)
-			full_unlock(scene);
-		return;
-	}
-
 	item->removed = true;
-
-	assert(scene != NULL);
-	assert(scene->source != NULL);
 
 	set_visibility(item, false);
 
 	signal_item_remove(item);
 	detach_sceneitem(item);
 
-	full_unlock(scene);
-
 	obs_sceneitem_set_transition(item, true, NULL);
 	obs_sceneitem_set_transition(item, false, NULL);
+}
+
+void obs_sceneitem_remove(obs_sceneitem_t *item)
+{
+	obs_scene_t *scene;
+
+	if (!item || item->removed)
+		return;
+
+	scene = item->parent;
+
+	assert(scene != NULL);
+	assert(scene->source != NULL);
+
+	full_lock(scene);
+	obs_sceneitem_remove_internal(item);
+	full_unlock(scene);
 
 	obs_sceneitem_release(item);
 }
