@@ -2144,6 +2144,7 @@ OBSBasicSettings::CreateEncoderPropertyView(const char *encoder,
 	view->setFrameShape(QFrame::NoFrame);
 	view->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 	view->setProperty("changed", QVariant(changed));
+	view->setScrolling(false);
 	QObject::connect(view, &OBSPropertiesView::Changed, this,
 			 &OBSBasicSettings::OutputsChanged);
 
@@ -4291,6 +4292,20 @@ void OBSBasicSettings::closeEvent(QCloseEvent *event)
 		event->ignore();
 }
 
+void OBSBasicSettings::showEvent(QShowEvent *event)
+{
+	QDialog::showEvent(event);
+
+	/* Reduce the height of the widget area if too tall compared to the screen
+	 * size (e.g., 720p) with potential window decoration (e.g., titlebar). */
+	const int titleBarHeight =
+		QApplication::style()->pixelMetric(QStyle::PM_TitleBarHeight);
+	const int maxHeight =
+		round(screen()->availableGeometry().height() - titleBarHeight);
+	if (size().height() >= maxHeight)
+		resize(size().width(), maxHeight);
+}
+
 void OBSBasicSettings::reject()
 {
 	if (AskIfCanCloseSettings())
@@ -5215,10 +5230,7 @@ void OBSBasicSettings::AdvOutRecCheckWarnings()
 			errorMsg.isEmpty() ? "warningLabel" : "errorLabel");
 		advOutRecWarning->setWordWrap(true);
 
-		QFormLayout *formLayout = reinterpret_cast<QFormLayout *>(
-			ui->advOutRecTopContainer->layout());
-
-		formLayout->addRow(nullptr, advOutRecWarning);
+		ui->advOutRecInfoLayout->addWidget(advOutRecWarning);
 	}
 }
 

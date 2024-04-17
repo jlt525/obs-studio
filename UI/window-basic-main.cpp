@@ -833,18 +833,11 @@ void OBSBasic::Save(const char *file)
 	}
 
 	if (api) {
-		if (safeModeModuleData) {
-			/* If we're in Safe Mode and have retained unloaded
-			 * plugin data, update the existing data object instead
-			 * of creating a new one. */
-			api->on_save(safeModeModuleData);
-			obs_data_set_obj(saveData, "modules",
-					 safeModeModuleData);
-		} else {
-			OBSDataAutoRelease moduleObj = obs_data_create();
-			api->on_save(moduleObj);
-			obs_data_set_obj(saveData, "modules", moduleObj);
-		}
+		if (!collectionModuleData)
+			collectionModuleData = obs_data_create();
+
+		api->on_save(collectionModuleData);
+		obs_data_set_obj(saveData, "modules", collectionModuleData);
 	}
 
 	if (lastOutputResolution) {
@@ -1133,11 +1126,9 @@ void OBSBasic::LoadData(obs_data_t *data, const char *file)
 	if (api)
 		api->on_preload(modulesObj);
 
-	if (safe_mode || disable_3p_plugins) {
-		/* Keep a reference to "modules" data so plugins that are not
-		 * loaded do not have their collection specific data lost. */
-		safeModeModuleData = obs_data_get_obj(data, "modules");
-	}
+	/* Keep a reference to "modules" data so plugins that are not loaded do
+	 * not have their collection specific data lost. */
+	collectionModuleData = obs_data_get_obj(data, "modules");
 
 	OBSDataArrayAutoRelease sceneOrder =
 		obs_data_get_array(data, "scene_order");
@@ -1462,8 +1453,9 @@ static const double scaled_vals[] = {1.0,         1.25, (1.0 / 0.75), 1.5,
 				     2.5,         2.75, 3.0,          0.0};
 
 extern void CheckExistingCookieId();
-
-#ifdef __APPLE__
+#if OBS_RELEASE_CANDIDATE == 0 && OBS_BETA == 0
+#define DEFAULT_CONTAINER "mkv"
+#elif defined(__APPLE__)
 #define DEFAULT_CONTAINER "fragmented_mov"
 #else
 #define DEFAULT_CONTAINER "fragmented_mp4"
@@ -1937,6 +1929,8 @@ void OBSBasic::AddVCamButton()
 			    QStringLiteral("configIconSmall"),
 			    &OBSBasic::VCamConfigButtonClicked);
 	vcamButton->insert(2);
+	vcamButton->first()->setSizePolicy(QSizePolicy::Minimum,
+					   QSizePolicy::Minimum);
 }
 
 void OBSBasic::ResetOutputs()
@@ -1981,6 +1975,34 @@ void OBSBasic::ResetOutputs()
 #define UNKNOWN_ERROR                                                  \
 	"Failed to initialize video.  Your GPU may not be supported, " \
 	"or your graphics drivers may need to be updated."
+
+static inline void LogEncoders()
+{
+	constexpr uint32_t hide_flags = OBS_ENCODER_CAP_DEPRECATED |
+					OBS_ENCODER_CAP_INTERNAL;
+
+	auto list_encoders = [](obs_encoder_type type) {
+		size_t idx = 0;
+		const char *encoder_type;
+
+		while (obs_enum_encoder_types(idx++, &encoder_type)) {
+			if (obs_get_encoder_caps(encoder_type) & hide_flags ||
+			    obs_get_encoder_type(encoder_type) != type) {
+				continue;
+			}
+
+			blog(LOG_INFO, "\t- %s (%s)", encoder_type,
+			     obs_encoder_get_display_name(encoder_type));
+		}
+	};
+
+	blog(LOG_INFO, "---------------------------------");
+	blog(LOG_INFO, "Available Encoders:");
+	blog(LOG_INFO, "  Video Encoders:");
+	list_encoders(OBS_ENCODER_VIDEO);
+	blog(LOG_INFO, "  Audio Encoders:");
+	list_encoders(OBS_ENCODER_AUDIO);
+}
 
 void OBSBasic::OBSInit()
 {
@@ -2068,8 +2090,8 @@ void OBSBasic::OBSInit()
 	cef_js_avail = cef && obs_browser_qcef_version() >= 3;
 #endif
 
-	OBSDataAutoRelease obsData = obs_get_private_data();
-	vcamEnabled = obs_data_get_bool(obsData, "vcamEnabled");
+	vcamEnabled =
+		(obs_get_output_flags(VIRTUAL_CAM_ID) & OBS_OUTPUT_VIDEO) != 0;
 	if (vcamEnabled) {
 		AddVCamButton();
 	}
@@ -2077,6 +2099,8 @@ void OBSBasic::OBSInit()
 	InitBasicConfigDefaults2();
 
 	CheckForSimpleModeX264Fallback();
+
+	LogEncoders();
 
 	blog(LOG_INFO, STARTUP_SEPARATOR);
 
@@ -4990,7 +5014,7 @@ void OBSBasic::ClearSceneData()
 		outputHandler->UpdateVirtualCamOutputSource();
 	}
 
-	safeModeModuleData = nullptr;
+	collectionModuleData = nullptr;
 	lastScene = nullptr;
 	swapScene = nullptr;
 	programScene = nullptr;
@@ -7665,7 +7689,7 @@ void OBSBasic::StartRecording()
 		return;
 	}
 
-	if (LowDiskSpace()) {
+	if (!IsFFmpegOutputToURL() && LowDiskSpace()) {
 		DiskSpaceMessage();
 		ui->recordButton->setChecked(false);
 		return;
@@ -10675,10 +10699,16 @@ bool SceneRenameDelegate::eventFilter(QObject *editor, QEvent *event)
 {
 	if (event->type() == QEvent::KeyPress) {
 		QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-		if (keyEvent->key() == Qt::Key_Escape) {
+		switch (keyEvent->key()) {
+		case Qt::Key_Escape: {
 			QLineEdit *lineEdit = qobject_cast<QLineEdit *>(editor);
 			if (lineEdit)
 				lineEdit->undo();
+			break;
+		}
+		case Qt::Key_Tab:
+		case Qt::Key_Backtab:
+			return false;
 		}
 	}
 
@@ -10894,7 +10924,7 @@ void OBSBasic::OutputPathInvalidMessage()
 				QTStr("Output.BadPath.Text"));
 }
 
-bool OBSBasic::OutputPathValid()
+bool OBSBasic::IsFFmpegOutputToURL() const
 {
 	const char *mode = config_get_string(Config(), "Output", "Mode");
 	if (strcmp(mode, "Advanced") == 0) {
@@ -10907,6 +10937,14 @@ bool OBSBasic::OutputPathValid()
 				return true;
 		}
 	}
+
+	return false;
+}
+
+bool OBSBasic::OutputPathValid()
+{
+	if (IsFFmpegOutputToURL())
+		return true;
 
 	const char *path = GetCurrentOutputPath();
 	return path && *path && QDir(path).exists();

@@ -67,12 +67,13 @@ void CheckIfAlreadyRunning(bool &already_running)
 	struct sockaddr_un bindInfo;
 	memset(&bindInfo, 0, sizeof(sockaddr_un));
 	bindInfo.sun_family = AF_LOCAL;
-	snprintf(bindInfo.sun_path + 1, sizeof(bindInfo.sun_path) - 1,
-		 "%s %d %s", "/com/obsproject", getpid(),
-		 App()->GetVersionString().c_str());
+	auto bindInfoStrlen = snprintf(bindInfo.sun_path + 1,
+				       sizeof(bindInfo.sun_path) - 1,
+				       "%s %d %s", "/com/obsproject", getpid(),
+				       App()->GetVersionString().c_str());
 
 	int bindErr = bind(uniq, (struct sockaddr *)&bindInfo,
-			   sizeof(struct sockaddr_un));
+			   sizeof(sa_family_t) + 1 + bindInfoStrlen);
 	already_running = bindErr == 0 ? 0 : 1;
 
 	if (already_running) {
@@ -183,7 +184,7 @@ static inline bool check_path(const char *data, const char *path,
 	return (access(output.c_str(), R_OK) == 0);
 }
 
-#define INSTALL_DATA_PATH OBS_INSTALL_PREFIX OBS_DATA_PATH "/obs-studio/"
+#define INSTALL_DATA_PATH OBS_INSTALL_PREFIX "/" OBS_DATA_PATH "/obs-studio/"
 
 bool GetDataFilePath(const char *data, string &output)
 {
@@ -193,8 +194,21 @@ bool GetDataFilePath(const char *data, string &output)
 			return true;
 	}
 
+	char *relative_data_path =
+		os_get_executable_path_ptr("../" OBS_DATA_PATH "/obs-studio/");
+
+	if (relative_data_path) {
+		bool result = check_path(data, relative_data_path, output);
+		bfree(relative_data_path);
+
+		if (result) {
+			return true;
+		}
+	}
+
 	if (check_path(data, OBS_DATA_PATH "/obs-studio/", output))
 		return true;
+
 	if (check_path(data, INSTALL_DATA_PATH, output))
 		return true;
 
